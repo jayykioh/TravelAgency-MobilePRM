@@ -2,11 +2,18 @@
 
 Your intelligent travel planning companion built with Next.js and Node.js.
 
+## Current repository layout
+
+- `Project/` contains the existing Next.js travel platform and backend reference.
+- `mobile/` contains the native Flutter hotel-booking app being rebuilt from the web experience.
+- The migration reuses existing backend access and does not add backend APIs or schema. See the [canonical Flutter migration spec](_bmad-output/specs/spec-flutter-mobile-migration/SPEC.md).
+- Release order: complete the agreed Flutter features, pass acceptance, then build and verify the release APK.
+
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 - Python 3.8+ (for Python services)
 
