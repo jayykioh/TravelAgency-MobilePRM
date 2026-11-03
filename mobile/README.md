@@ -1,17 +1,19 @@
-# mobile
+# TripC Mobile (Flutter)
 
-A new Flutter project.
+Native Flutter app for the agreed hotel booking migration. The existing Next.js UI and flows are the product reference; the app reuses existing backend APIs and Supabase access. Backend changes and new mobile endpoints are out of scope.
 
-## Getting Started
+## Current feature scope
 
-This project is a starting point for a Flutter application.
+Auth/profile, hotel discovery and filters, detail/rooms/rates, map, booking request and history, notifications, and AI chat. A feature is complete only when its required existing data/auth path works, not when its screen is present.
 
-A few resources to get you started if this is your first Flutter project:
+## Setup
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+See [`README-HOTELS.md`](README-HOTELS.md) for the current Supabase configuration and run commands. Use only client-safe public credentials. Never pass a Supabase service-role key or server secret to Flutter.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Canonical migration contract
+
+Use [`spec-flutter-mobile-migration`](../_bmad-output/specs/spec-flutter-mobile-migration/SPEC.md) and its linked companions as the source of truth. See [`PROJECT_CHECKLIST.md`](../PROJECT_CHECKLIST.md) for feature status and release tasks.
+
+## Release order
+
+Finish all scoped features → run and pass acceptance → build, install, and verify the release APK. Do not treat a debug APK or a screen-only implementation as acceptance evidence.

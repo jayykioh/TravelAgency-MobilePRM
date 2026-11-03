@@ -166,36 +166,49 @@ class HotelService {
         .eq('status', 'pending');
   }
 
-  /// Reads the profile through the existing Supabase schema and current RLS.
+  /// Reads the profile strictly for the current authenticated user session.
+  /// Does not fallback to querying by email to prevent returning unverified identity.
   Future<Map<String, dynamic>?> currentProfile() async {
     final user = auth.currentUser;
     if (user == null) return null;
-    final byId = await client
+    return client
         .from('users')
         .select()
         .eq('id', user.id)
         .maybeSingle();
-    if (byId != null) return byId;
-    if (user.email == null) return null;
-    return client.from('users').select().eq('email', user.email!).maybeSingle();
   }
 
+  /// Updates supported profile fields (name, bio, city, country, phone_number).
   Future<Map<String, dynamic>> updateCurrentProfile(
     Map<String, dynamic> values,
   ) async {
     final user = auth.currentUser;
     if (user == null) throw const AuthException('Vui lòng đăng nhập');
+    
+    // Only allow supported and verified profile fields
+    const allowedFields = {'name', 'bio', 'city', 'country', 'phone_number'};
+    final safeValues = <String, dynamic>{
+      for (final entry in values.entries)
+        if (allowedFields.contains(entry.key)) entry.key: entry.value,
+    };
+
     final profile = await currentProfile();
     if (profile == null) {
-      return client
-          .from('users')
-          .insert({'id': user.id, 'email': user.email, ...values})
-          .select()
-          .single();
+      try {
+        return await client
+            .from('users')
+            .insert({'id': user.id, 'email': user.email, ...safeValues})
+            .select()
+            .single();
+      } catch (e) {
+        throw StateError(
+          'Chưa thể khởi tạo hồ sơ trên backend hiện tại: $e. Backend có thể yêu cầu định danh Clerk hoặc quyền RLS.',
+        );
+      }
     }
     return client
         .from('users')
-        .update(values)
+        .update(safeValues)
         .eq('id', profile['id'])
         .select()
         .single();

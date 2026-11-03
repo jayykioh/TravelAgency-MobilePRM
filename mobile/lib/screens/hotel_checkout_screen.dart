@@ -47,15 +47,51 @@ class BookingScreen extends StatefulWidget {
 
 class _BookingState extends State<BookingScreen> {
   final form = GlobalKey<FormState>();
-  final name = TextEditingController(),
-      email = TextEditingController(),
-      phone = TextEditingController(),
-      specialRequests = TextEditingController(),
-      voucher = TextEditingController();
+  final name = TextEditingController();
+  final email = TextEditingController();
+  final phone = TextEditingController();
+  final specialRequests = TextEditingController();
+  final voucher = TextEditingController();
   bool busy = false;
   String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    final state = context.read<HotelState>();
+    name.text = state.draftGuestName;
+    email.text = state.draftGuestEmail.isNotEmpty
+        ? state.draftGuestEmail
+        : (state.currentUser?.email ?? '');
+    phone.text = state.draftGuestPhone;
+    specialRequests.text = state.draftSpecialRequests;
+    voucher.text = state.draftVoucherCode;
+
+    name.addListener(_syncDraft);
+    email.addListener(_syncDraft);
+    phone.addListener(_syncDraft);
+    specialRequests.addListener(_syncDraft);
+    voucher.addListener(_syncDraft);
+  }
+
+  void _syncDraft() {
+    if (!mounted) return;
+    context.read<HotelState>().saveGuestDraft(
+      name: name.text,
+      email: email.text,
+      phone: phone.text,
+      specialRequests: specialRequests.text,
+      voucherCode: voucher.text,
+    );
+  }
+
   @override
   void dispose() {
+    name.removeListener(_syncDraft);
+    email.removeListener(_syncDraft);
+    phone.removeListener(_syncDraft);
+    specialRequests.removeListener(_syncDraft);
+    voucher.removeListener(_syncDraft);
     name.dispose();
     email.dispose();
     phone.dispose();
@@ -116,6 +152,64 @@ class _BookingState extends State<BookingScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            if (!state.isAuthenticated) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFFFD5C2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.account_circle_outlined,
+                        color: Color(0xFFFF5E1F), size: 28),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Bạn chưa đăng nhập',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Color(0xFF9A3412),
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Đăng nhập để liên kết đơn đặt phòng với tài khoản của bạn.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFFC2410C),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF5E1F),
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      onPressed: () async {
+                        final loggedIn = await state.requireAuth(
+                          context,
+                          reason:
+                              'Đăng nhập để liên kết đơn đặt phòng với tài khoản TripC của bạn.',
+                        );
+                        if (loggedIn && mounted && email.text.isEmpty) {
+                          email.text = state.currentUser?.email ?? '';
+                        }
+                      },
+                      child: const Text('Đăng nhập'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             const Text(
               'Guest Information',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
@@ -304,6 +398,7 @@ class _BookingState extends State<BookingScreen> {
         },
       });
       if (!mounted) return;
+      state.clearGuestDraft();
       await showDialog<void>(
         context: context,
         builder: (c) => AlertDialog(

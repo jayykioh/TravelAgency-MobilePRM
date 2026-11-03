@@ -1,17 +1,21 @@
-# Data adapters dùng nguồn hiện hữu
-| Nhu cầu | Nguồn React/Next.js | Flutter |
-|---|---|---|
-| Auth | lib/hotel/clerkAuth.ts; BookingSidebar và checkout form dùng Clerk | Supabase Auth theo yêu cầu; compatibility chưa xác minh |
-| Search | HotelList.tsx gọi GET /api/hotels | HotelService.search |
-| Detail/rooms/rates | app/api/hotels/[slug]/route.ts, rooms/route.ts, rates/route.ts | HotelService.detail/rooms/rates |
-| Form data | hotel-checkout-form.tsx query Supabase hotels/rooms | SDK query dưới quyền hiện hữu |
-| Create pending | /api/checkout/initialize gọi CheckoutService; /api/hotels/bookings yêu cầu Clerk | BookingService.createPending qua thao tác hiện hữu tương thích |
-| History | app/my-bookings/page.tsx gọi /api/bookings/user | BookingService.list/detail |
-## Gate Member 1 — sáng ngày 1
-- [ ] Supabase Auth đã bật và register/login thực sự hoạt động.
-- [ ] Kiểm tra session Supabase có được API chấp nhận không; JWT Supabase không mặc nhiên thay được Clerk.
-- [ ] SDK fallback chỉ khi RLS hiện hữu cho phép đọc/ghi đúng chủ sở hữu.
-- [ ] Kiểm tra create pending trả ID và history đọc được mà không cần payment settlement.
-- [ ] Nếu API và SDK đều không hỗ trợ: ghi blocker chính xác; không tạo endpoint/schema/policy/auth mới.
-Không có contract /api/mobile/v1 mới, không server JWT riêng, không migration/seed và không dùng server secrets trong Flutter.
+# Existing backend integration contract
 
+## Rule
+
+The existing Next.js/Supabase backend is reused as-is. Do not add mobile endpoints, alter existing routes, change database/schema/RLS/auth, add migrations, or create seed data. Flutter may call an existing API or use the existing Supabase SDK path only when that path already supports the user session and permissions required.
+
+| Mobile need | Existing source to reuse | Current Flutter implementation / verification |
+|---|---|---|
+| Sign-in/register/profile | Existing project auth and profile behavior | Supabase Auth and profile screen exist in Flutter; compatibility with the current Clerk-based web identity and real RLS is unverified. |
+| Hotel search | Existing hotel query/API and hotel data | `HotelService.searchHotels` queries `hotels`; live access and full criteria behavior need verification. |
+| Hotel detail/rooms/rates | Existing hotel detail, room, and rate sources | Flutter queries `hotels`, `hotel_rooms`, and `hotel_rates`; verify schema mapping, date coverage, and permissions. |
+| Create pending booking | Existing booking operation and its business rules | Flutter inserts `hotel_bookings`; production permission, required fields, owner binding, and real ID response are unverified. |
+| Booking history/cancel | Existing owner-scoped booking behavior | Flutter reads/updates `hotel_bookings`; verify access is bound to the signed-in owner and cancellation rules match the web. |
+| Notifications | Existing notification source | Flutter queries `notifications`; verify the current session maps to the expected `user_id` and RLS. |
+| AI chat | Existing `POST /api/chat/messages` | Flutter calls this route with the available Supabase access token; the route may require Clerk and return 401. Compatibility is unverified. |
+
+## Integration gate
+
+For each operation, document the exact existing endpoint/table, request and response shape, auth mechanism, and permission evidence. Validate against the real configured environment before marking the feature complete.
+
+If an existing API rejects the available session, or existing Supabase permissions do not allow the operation, mark that feature blocked. Do not create a new API, policy, schema, auth flow, service-role path, or client-side ownership workaround. Resolve the blocker only through an already supported access path or an explicit future scope decision.

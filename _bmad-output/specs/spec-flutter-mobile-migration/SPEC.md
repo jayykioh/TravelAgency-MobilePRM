@@ -1,32 +1,32 @@
 ---
 id: SPEC-flutter-mobile-migration
-companions: [api-contract.md, business-rules.md, architecture-and-state.md, ux-and-screens.md, delivery-and-quality.md]
+companions: [api-contract.md, business-rules.md, architecture-and-state.md, ux-and-screens.md, delivery-and-quality.md, epic-1-auth-profile.md]
 ---
-# Flutter Hotel Booking Migration
+# Flutter Mobile Migration
 ## Why
-Migrate giao diện và luồng Hotel Booking React/Next.js sang mobile/ trong 3 ngày, 4 người.
+Rebuild the selected Next.js travel-booking experience as a native Flutter mobile app while reusing the existing backend and data access.
 ## Capabilities
-- **CAP-1** — **intent:** Tái dùng data layer. **success:** SDK/API hiện hữu đọc ghi được bằng session thật.
-- **CAP-2** — **intent:** Đăng ký/đăng nhập. **success:** Supabase Auth login/register/restore/logout đạt compatibility gate.
-- **CAP-3** — **intent:** Tìm kiếm. **success:** Lọc city/ngày/số khách và trả kết quả thật.
-- **CAP-4** — **intent:** Chi tiết/chọn phòng. **success:** Hiển thị loại phòng và giá từng đêm từ dữ liệu thật.
-- **CAP-5** — **intent:** Nhập thông tin khách. **success:** Validate và giữ draft khi Back.
-- **CAP-6** — **intent:** Review/tạo booking. **success:** Nhận ID thật và trạng thái pending.
-- **CAP-7** — **intent:** Lịch sử/chi tiết. **success:** Đọc đúng đơn thuộc session hiện tại.
-- **CAP-8** — **intent:** Điều hướng/state. **success:** Provider giữ criteria, room, draft qua auth guard.
-- **CAP-9** — **intent:** P1 Map. **success:** Vị trí hiển thị khi P0 xong đúng hạn.
-- **CAP-10** — **intent:** P1 Notifications. **success:** Đọc thông báo qua nguồn hiện hữu nếu P0 đúng hạn.
-- **CAP-11** — **intent:** P1 Chat. **success:** API hiện hữu tương thích hoạt động nếu P0 đúng hạn.
-- **CAP-12** — **intent:** Kiểm tra/đóng gói. **success:** Analyze/test đạt, APK cài và chạy 6 bước.
+- **CAP-1** — **intent:** Reuse the existing data services. **success:** Flutter reads and writes through currently supported APIs or Supabase access using real credentials and permissions.
+- **CAP-2** — **intent:** Authenticate and manage a user profile. **success:** Sign-in, registration, session restore, profile view/update, and logout work with an authentication method already supported by the backend.
+- **CAP-3** — **intent:** Discover hotels. **success:** Search and filter by supported criteria and receive real backend data with loading, empty, and error states.
+- **CAP-4** — **intent:** Compare hotel details and rooms. **success:** Hotel details, available rooms, rates, and map location use the selected hotel's real data.
+- **CAP-5** — **intent:** Enter and preserve guest details. **success:** Required guest information validates and the draft survives back navigation.
+- **CAP-6** — **intent:** Request a hotel booking. **success:** Booking uses existing backend rules and success is shown only after a real booking identifier is returned.
+- **CAP-7** — **intent:** View and manage hotel bookings. **success:** A signed-in user can view their own bookings/details and perform cancellation supported by the existing backend.
+- **CAP-8** — **intent:** Preserve flow state. **success:** Search criteria, selected hotel/room, and guest draft survive navigation and supported auth transitions.
+- **CAP-9** — **intent:** Locate hotels. **success:** Map displays available hotel coordinates and opens an external map when supported.
+- **CAP-10** — **intent:** Use notifications. **success:** The user can read and mark notifications using an existing supported data source.
+- **CAP-11** — **intent:** Use the AI chat. **success:** The app sends a conversation to an existing compatible chat API and displays its response.
+- **CAP-12** — **intent:** Accept and package the agreed mobile release scope. **success:** All scoped features are implemented, acceptance passes, then a release APK installs and runs through the required flow.
 ## Constraints
-- Không viết/sửa backend, database, migration, seed, RLS hay auth server; không tạo /api/mobile/v1.
-- Tái dùng Supabase SDK hoặc API/query web hiện hữu; chỉ publishable/anon key và session hợp lệ, không service-role.
-- Chỉ đối chiếu Auth/Hotel Booking và dependency trực tiếp.
-- Ngày 1 Auth + toàn bộ UI tĩnh; ngày 2 dữ liệu thật, P0 thông suốt 18:00; ngày 3 freeze 12:00, chiều test chéo/APK.
+- Next.js UI and behavior are the product reference; Flutter implements native mobile layouts and interactions.
+- Do not change the existing backend, APIs, database/schema, migrations, seed data, authentication services, or access policies; do not create mobile-specific endpoints.
+- Connect only through backend APIs or Supabase SDK access and authentication/permissions already supported by the project; use no service-role or server secrets in Flutter.
+- If an existing service does not support the mobile session or required operation, record a blocker; do not work around it with a backend change.
+- Acceptance begins only after CAP-2 through CAP-11 are implemented; build/package and verify the APK only after acceptance passes.
 ## Non-goals
-Flights, Shop, Events, Dining, thanh toán online; slide/video/PDF/analyze-size; backend mới.
+Migrating flights, dining, events, shopping, beauty, wellness, or other non-hotel services; adding online payment; changing or extending backend behavior.
 ## Success signal
-APK chạy login/register → search → detail/room → guest form → review/pending → history/detail bằng dữ liệu thật.
+The complete agreed mobile scope passes real-backend acceptance, then a release APK installs and demonstrates sign-in, hotel search, detail/room selection, pending booking, booking history, and the included map, notifications, and chat features.
 ## Open Questions
-Web được đối chiếu dùng Clerk. Supabase Auth và RLS hiện tại có cho session truy cập/tạo/đọc đơn không? Đây là blocker cần kiểm chứng, không được chuyển thành task backend.
-
+- Which currently supported auth/session path lets Flutter perform the required operations under existing backend permissions? This must be verified; backend changes are out of scope.
