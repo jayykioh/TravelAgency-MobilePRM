@@ -242,84 +242,320 @@ class _HomeState extends State<Home> {
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 18)),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
               sliver: SliverToBoxAdapter(
                 child: Row(
                   children: [
                     const Expanded(
                       child: Text(
-                        'Handpicked stays',
+                        'Chỗ nghỉ nổi bật',
                         style: TextStyle(
-                          fontSize: 27,
+                          fontSize: 24,
                           fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
                         ),
                       ),
                     ),
-                    DropdownButton<String>(
-                      value: state.sortBy,
-                      underline: const SizedBox.shrink(),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'recommended',
-                          child: Text('Recommended'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'price_low',
-                          child: Text('Price ↑'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'price_high',
-                          child: Text('Price ↓'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'rating',
-                          child: Text('Top rated'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'popular',
-                          child: Text('Popular'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        state.sortBy = value;
-                        final nextResults = state.hotels();
-                        setState(() {
-                          results = nextResults;
-                        });
-                      },
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: DropdownButton<String>(
+                        value: state.sortBy,
+                        underline: const SizedBox.shrink(),
+                        icon: const Icon(Icons.swap_vert_rounded, size: 20, color: Color(0xFFFF5E1F)),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'recommended',
+                            child: Text('Đề xuất', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'price_low',
+                            child: Text('Giá ↑', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'price_high',
+                            child: Text('Giá ↓', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'rating',
+                            child: Text('Đánh giá', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                          DropdownMenuItem(
+                            value: 'popular',
+                            child: Text('Phổ biến', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          state.updateSort(value);
+                          final nextResults = state.hotels();
+                          setState(() {
+                            results = nextResults;
+                          });
+                        },
+                      ),
                     ),
-                    IconButton.filledTonal(
-                      onPressed: () async {
-                        await showModalBottomSheet<void>(
-                          context: context,
-                          isScrollControlled: true,
-                          builder: (_) => const HotelFilterSheet(),
-                        );
-                        final nextResults = state.hotels();
-                        setState(() {
-                          results = nextResults;
-                        });
-                      },
-                      icon: const Icon(Icons.tune),
+                    const SizedBox(width: 8),
+                    Badge.count(
+                      count: state.activeFiltersCount,
+                      isLabelVisible: state.hasActiveFilters,
+                      backgroundColor: const Color(0xFFFF5E1F),
+                      child: IconButton.filledTonal(
+                        style: IconButton.styleFrom(
+                          backgroundColor: state.hasActiveFilters
+                              ? const Color(0xFFFFF7ED)
+                              : const Color(0xFFF1F5F9),
+                          foregroundColor: state.hasActiveFilters
+                              ? const Color(0xFFFF5E1F)
+                              : const Color(0xFF334155),
+                        ),
+                        onPressed: () async {
+                          await showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => const HotelFilterSheet(),
+                          );
+                          final nextResults = state.hotels();
+                          setState(() {
+                            results = nextResults;
+                          });
+                        },
+                        icon: const Icon(Icons.tune_rounded),
+                        tooltip: 'Bộ lọc',
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
+
+            // Active filters chip bar
+            if (state.hasActiveFilters)
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 44,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    children: [
+                      if (state.priceRange.start.round() > 50 || state.priceRange.end.round() < 1000)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: InputChip(
+                            label: Text(
+                              '\$${state.priceRange.start.round()} - \$${state.priceRange.end.round()}${state.priceRange.end >= 1000 ? '+' : ''}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                            selected: true,
+                            selectedColor: const Color(0xFFFFF7ED),
+                            deleteIconColor: const Color(0xFFFF5E1F),
+                            side: const BorderSide(color: Color(0xFFFFD5C2)),
+                            onDeleted: () {
+                              state.resetPriceRange();
+                              setState(() => results = state.hotels());
+                            },
+                          ),
+                        ),
+                      for (final star in state.stars)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: InputChip(
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('$star', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.star_rounded, size: 14, color: Color(0xFFF59E0B)),
+                              ],
+                            ),
+                            selected: true,
+                            selectedColor: const Color(0xFFFFF7ED),
+                            deleteIconColor: const Color(0xFFFF5E1F),
+                            side: const BorderSide(color: Color(0xFFFFD5C2)),
+                            onDeleted: () {
+                              state.removeStarFilter(star);
+                              setState(() => results = state.hotels());
+                            },
+                          ),
+                        ),
+                      for (final amenity in state.amenities)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: InputChip(
+                            label: Text(
+                              amenity,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                            selected: true,
+                            selectedColor: const Color(0xFFFFF7ED),
+                            deleteIconColor: const Color(0xFFFF5E1F),
+                            side: const BorderSide(color: Color(0xFFFFD5C2)),
+                            onDeleted: () {
+                              state.removeAmenityFilter(amenity);
+                              setState(() => results = state.hotels());
+                            },
+                          ),
+                        ),
+                      for (final type in state.propertyTypes)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: InputChip(
+                            label: Text(
+                              type.toUpperCase(),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                            selected: true,
+                            selectedColor: const Color(0xFFFFF7ED),
+                            deleteIconColor: const Color(0xFFFF5E1F),
+                            side: const BorderSide(color: Color(0xFFFFD5C2)),
+                            onDeleted: () {
+                              state.removePropertyTypeFilter(type);
+                              setState(() => results = state.hotels());
+                            },
+                          ),
+                        ),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
+                        onPressed: () {
+                          state.clearFilters();
+                          setState(() => results = state.hotels());
+                        },
+                        icon: const Icon(Icons.clear_all_rounded, size: 16),
+                        label: const Text('Xóa tất cả'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
             if (snapshot.connectionState != ConnectionState.done)
               const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Color(0xFFFF5E1F)),
+                      SizedBox(height: 16),
+                      Text(
+                        'Đang tìm kiếm khách sạn phù hợp...',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               )
             else if (snapshot.hasError)
               SliverFillRemaining(
                 child: Center(
-                  child: Text('Không tải được khách sạn: ${snapshot.error}'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFEF2F2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.error_outline_rounded,
+                            size: 44,
+                            color: Color(0xFFDC2626),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Không thể tải danh sách khách sạn',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${snapshot.error}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF5E1F),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                          onPressed: runSearch,
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               )
             else if ((snapshot.data ?? []).isEmpty)
-              const SliverFillRemaining(
-                child: Center(child: Text('Không có khách sạn phù hợp')),
+              SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF1F5F9),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.search_off_rounded,
+                            size: 52,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'Không tìm thấy khách sạn phù hợp',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Thử thay đổi từ khóa điểm đến hoặc xóa các bộ lọc hiện tại để xem thêm kết quả.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Color(0xFF64748B), fontSize: 13, height: 1.4),
+                        ),
+                        if (state.hasActiveFilters) ...[
+                          const SizedBox(height: 20),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF5E1F),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
+                            onPressed: () {
+                              state.clearFilters();
+                              setState(() => results = state.hotels());
+                            },
+                            icon: const Icon(Icons.clear_all_rounded, size: 18),
+                            label: const Text('Xóa tất cả bộ lọc', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               )
             else
               SliverPadding(

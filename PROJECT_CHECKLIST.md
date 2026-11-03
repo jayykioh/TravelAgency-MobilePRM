@@ -28,7 +28,7 @@ Statuses below follow the sprint tracker and a source-file inventory. A **Done**
 | Auth: restore session, guard routes, preserve context | Done in client | `hotel_state.dart` auth state stream listener, route guard helper, guest draft retention across navigations, clear separation between guest ID and authenticated user. |
 | Profile view/update | Done in client | `profile_screen.dart` completed with full states (loading, guest preview, missing profile alert, error/retry, safe editing dialog preserving input on failure), read-only email, and verified fields. |
 | Hotel keyword/date/guest/room search | Done in tracker | `hotel_home_screen.dart`, `hotel_state.dart`, `hotel_service.dart`; tracker says done. Real environment acceptance remains part of the release gate. |
-| Hotel filters, sorting, clear filters | In progress | `filter_section.dart` exists; filter/sort behavior is not marked done in the tracker. |
+| Hotel filters, sorting, clear filters | Done in client | `filter_section.dart` modernized with FilterChips, active filter badges, active chip bar with quick removal, sorting options, and clear all filters. |
 | Hotel map/list selection | Done in tracker | `hotels_map_screen.dart` exists and story 2-3 is done. Confirm map data and external map handoff in acceptance. |
 | Loading, empty, error, retry states | Done in tracker | Story 2-4 is done; acceptance must still exercise network and authorization failures. |
 | Hotel details, gallery, amenities, policies | Done in tracker | `hotel_detail_screen.dart`; story 3-1 is done. |

@@ -74,6 +74,53 @@ class HotelState extends ChangeNotifier {
   final Set<String> propertyTypes = <String>{};
   String sortBy = 'recommended';
 
+  /// Number of active filters applied to the search.
+  int get activeFiltersCount {
+    int count = 0;
+    if (priceRange.start.round() > 50 || priceRange.end.round() < 1000) count++;
+    count += stars.length;
+    count += amenities.length;
+    count += propertyTypes.length;
+    return count;
+  }
+
+  /// True if any custom filter is active.
+  bool get hasActiveFilters => activeFiltersCount > 0;
+
+  /// Clears all active filters back to default.
+  void clearFilters() {
+    priceRange = const RangeValues(50, 1000);
+    stars.clear();
+    amenities.clear();
+    propertyTypes.clear();
+    notifyListeners();
+  }
+
+  void removeStarFilter(int star) {
+    stars.remove(star);
+    notifyListeners();
+  }
+
+  void removeAmenityFilter(String amenity) {
+    amenities.remove(amenity);
+    notifyListeners();
+  }
+
+  void removePropertyTypeFilter(String type) {
+    propertyTypes.remove(type);
+    notifyListeners();
+  }
+
+  void resetPriceRange() {
+    priceRange = const RangeValues(50, 1000);
+    notifyListeners();
+  }
+
+  void updateSort(String newSort) {
+    sortBy = newSort;
+    notifyListeners();
+  }
+
   /// Retained guest checkout draft state across auth/back navigations.
   String draftGuestName = '';
   String draftGuestEmail = '';
