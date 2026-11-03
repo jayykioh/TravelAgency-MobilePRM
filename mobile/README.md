@@ -12,7 +12,7 @@ See [`README-HOTELS.md`](README-HOTELS.md) for the current Supabase configuratio
 
 ## Canonical migration contract
 
-Read [`MOBILE_FLUTTER_SPEC.md`](../MOBILE_FLUTTER_SPEC.md) for the supersession notice, then use [`spec-flutter-mobile-migration`](../_bmad-output/specs/spec-flutter-mobile-migration/SPEC.md) and its linked companions as the source of truth.
+Use [`spec-flutter-mobile-migration`](../_bmad-output/specs/spec-flutter-mobile-migration/SPEC.md) and its linked companions as the source of truth. See [`PROJECT_CHECKLIST.md`](../PROJECT_CHECKLIST.md) for feature status and release tasks.
 
 ## Release order
 

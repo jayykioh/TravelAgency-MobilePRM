@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../screens/auth_screen.dart';
 import '../services/hotel_service.dart';
 
 /// UI state shared by search, detail, checkout and booking history screens.
 class HotelState extends ChangeNotifier {
   HotelState({HotelService? service}) {
     _service = service;
+    _initAuthListener();
   }
 
   HotelService? _service;
@@ -14,6 +17,51 @@ class HotelState extends ChangeNotifier {
       _service ??= HotelService(Supabase.instance.client);
 
   SupabaseClient get db => service.client;
+  StreamSubscription<AuthState>? _authSubscription;
+
+  void _initAuthListener() {
+    try {
+      _authSubscription = service.auth.onAuthStateChange.listen((data) {
+        notifyListeners();
+      });
+    } catch (_) {
+      // Supabase is not initialized in some unit test environments.
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Active Supabase user if logged in.
+  User? get currentUser {
+    try {
+      return service.auth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Active Supabase session if authenticated.
+  Session? get currentSession {
+    try {
+      return service.auth.currentSession;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// True if current session exists with an authenticated user.
+  bool get isAuthenticated => currentUser != null;
+
+  /// Distinguish guest checkout from authenticated user session.
+  bool get isGuestBooking => !isAuthenticated;
+
+  /// Authenticated user identifier (empty when guest).
+  String get authenticatedUserId => currentUser?.id ?? '';
+
   DateTime start = DateTime.now().add(const Duration(days: 1));
   DateTime end = DateTime.now().add(const Duration(days: 2));
   int guests = 2;
@@ -26,11 +74,60 @@ class HotelState extends ChangeNotifier {
   final Set<String> propertyTypes = <String>{};
   String sortBy = 'recommended';
 
+  /// Retained guest checkout draft state across auth/back navigations.
+  String draftGuestName = '';
+  String draftGuestEmail = '';
+  String draftGuestPhone = '';
+  String draftSpecialRequests = '';
+  String draftVoucherCode = '';
+
+  void saveGuestDraft({
+    String? name,
+    String? email,
+    String? phone,
+    String? specialRequests,
+    String? voucherCode,
+  }) {
+    if (name != null) draftGuestName = name;
+    if (email != null) draftGuestEmail = email;
+    if (phone != null) draftGuestPhone = phone;
+    if (specialRequests != null) draftSpecialRequests = specialRequests;
+    if (voucherCode != null) draftVoucherCode = voucherCode;
+    notifyListeners();
+  }
+
+  void clearGuestDraft() {
+    draftGuestName = '';
+    draftGuestEmail = '';
+    draftGuestPhone = '';
+    draftSpecialRequests = '';
+    draftVoucherCode = '';
+    notifyListeners();
+  }
+
+  /// Navigates to auth screen if user is not logged in and returns whether logged in.
+  Future<bool> requireAuth(
+    BuildContext context, {
+    String? reason,
+  }) async {
+    if (isAuthenticated) return true;
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AuthScreen(
+          reasonMessage: reason,
+        ),
+      ),
+    );
+    return result == true && isAuthenticated;
+  }
+
   /// Stable owner key for guest demo bookings when no Supabase session exists.
   final String guestOwnerRef =
       'DEMO-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
 
-  String get bookingOwnerRef => service.auth.currentUser?.id ?? guestOwnerRef;
+  String get bookingOwnerRef =>
+      isAuthenticated ? currentUser!.id : guestOwnerRef;
 
   int get nights =>
       DateUtils.dateOnly(end).difference(DateUtils.dateOnly(start)).inDays;

@@ -1,3 +1,9 @@
+# Archived progress snapshot: TripC Shop Partner System
+
+> This report is a historical Shop Partner implementation snapshot dated February 8, 2026. It is not the current project status and does not describe the active Flutter hotel-booking migration. Use [`PROJECT_CHECKLIST.md`](PROJECT_CHECKLIST.md) and `_bmad-output/implementation-artifacts/sprint-status.yaml` for current tasks and status.
+
+---
+
 # TripC Remade - Shop Partner System: Project Progress Report
 
 > **Generated**: February 8, 2026
