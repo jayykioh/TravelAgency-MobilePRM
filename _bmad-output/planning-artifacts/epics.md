@@ -34,11 +34,15 @@ This breakdown follows the canonical migration spec. The sprint status file is t
 
 **Stories:** 3-1 gallery/content; 3-2 AI insight/reviews; 3-3 rooms/rate fallback; 3-4 room selection/reserve summary.
 
+**Detailed specification:** `../specs/spec-flutter-mobile-migration/epic-3-hotel-detail-rooms-rates.md`.
+
 **Complete when:** hotel, review/aggregate, room, and rate content comes from supported existing sources; selected room and quote stay consistent through checkout. Do not invent review data, rates, or availability.
 
 ## Epic 4 — Guest details, price review, and pending booking
 
 **Stories:** 4-1 guest form/draft; 4-2 booking summary/price breakdown; 4-3 create pending booking.
+
+**Detailed specification:** `../specs/spec-flutter-mobile-migration/epic-4-guest-checkout-pending-booking.md`.
 
 **Complete when:** guest values validate and survive back navigation; price rules match the existing web/backend behavior; a booking request succeeds only after the backend returns a real ID/status under the signed-in user's existing permissions. Display pending/unpaid accurately.
 

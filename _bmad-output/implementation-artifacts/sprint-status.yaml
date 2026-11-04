@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 11-03-2026 12:00
-last_updated: 11-03-2026 12:00
+last_updated: 11-05-2026 12:00
 project: TravelAgency-MobilePRM
 project_key: NOKEY
 tracking_system: file-system
@@ -55,8 +55,15 @@ blockers:
       đang dùng Clerk.
   - task: 4-3-tạo-booking-pending-an-toàn
     status: open
-    reason: Code insert đã có nhưng chưa chứng minh production RLS cho phép tạo 
-      đơn và trả ID thật.
+    reason: Code hoàn chỉnh (user_uuid = auth.uid, chống gửi trùng, chỉ báo 
+      thành công khi có ID). Insert anon bị từ chối 401 (đã kiểm). Chưa chứng 
+      minh insert với session đăng nhập vì cần users.id = auth.uid và RLS cho 
+      phép.
+  - task: 3-2-xem-ai-insight-và-reviews
+    status: open
+    reason: Code hoàn chỉnh. hotel_reviews không tồn tại trên DB thật nên đọc 
+      bảng reviews; chưa có review published để kiểm. Insight cần Next.js chạy 
+      với APP_API_BASE_URL để nghiệm thu end-to-end.
   - task: 5-3-hủy-đơn-pending
     status: open
     reason: Code update đã có nhưng chưa chứng minh production RLS cho phép hủy 
@@ -85,13 +92,13 @@ development_status:
 
   epic-3: in-progress
   3-1-xem-gallery-và-nội-dung-chi-tiết-khách-sạn: done
-  3-2-xem-ai-insight-và-reviews: in-progress
+  3-2-xem-ai-insight-và-reviews: review
   3-3-xem-phòng-và-giá-fallback: done
   3-4-chọn-phòng-và-cập-nhật-reserve-bar: done
   epic-3-retrospective: optional
 
   epic-4: in-progress
-  4-1-nhập-và-giữ-thông-tin-khách: in-progress
+  4-1-nhập-và-giữ-thông-tin-khách: done
   4-2-xem-tóm-tắt-và-bảng-giá: done
   4-3-tạo-booking-pending-an-toàn: in-progress
   epic-4-retrospective: optional
