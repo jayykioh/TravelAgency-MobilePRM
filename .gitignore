@@ -65,3 +65,10 @@ android/app/build/
 android/.gradle/
 Project/android/app/build/
 Project/android/.gradle/
+
+# Mobile environment & signing secrets
+**/env.json
+**/*.env.json
+**/key.properties
+**/*.keystore
+**/*.jks

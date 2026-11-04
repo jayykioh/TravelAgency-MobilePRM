@@ -5,7 +5,15 @@ Không có Flights, Shop, Events, Dining, Transport hoặc Partner trong scope h
 
 Chạy:
 
-flutter run -d chrome --dart-define=SUPABASE_URL=https://YOUR_PROJECT.supabase.co --dart-define=SUPABASE_ANON_KEY=YOUR_PUBLIC_KEY --dart-define=APP_API_BASE_URL=https://YOUR_EXISTING_NEXTJS_HOST
+Chạy nhanh bằng file cấu hình (khuyên dùng):
+```powershell
+flutter run -d chrome --web-port=3000 --dart-define-from-file=env.json
+```
+
+Hoặc truyền cờ trực tiếp:
+```powershell
+flutter run -d chrome --dart-define=SUPABASE_URL=https://dkviqhhjmdtqkfljhhuk.supabase.co --dart-define=SUPABASE_ANON_KEY=YOUR_PUBLIC_KEY --dart-define=APP_API_BASE_URL=http://localhost:3000
+```
 
 Android debug: `flutter run` với cùng các `dart-define`. Chỉ build APK release sau khi toàn bộ feature scope hoàn thành và acceptance pass.
 

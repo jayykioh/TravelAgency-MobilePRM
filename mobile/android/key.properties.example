@@ -1,0 +1,14 @@
+# Keystore signing configuration for TripC release build
+# NEVER commit key.properties or .jks files to Git!
+#
+# Generate keystore with:
+# keytool -genkey -v -keystore release-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tripckey
+#
+# Put release-keystore.jks in mobile/android/app/
+# and copy this file to mobile/android/key.properties
+
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=tripckey
+storeFile=../app/release-keystore.jks
+

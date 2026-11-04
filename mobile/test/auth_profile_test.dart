@@ -87,6 +87,21 @@ void main() {
       expect(find.text('Vui lòng nhập email.'), findsOneWidget);
       expect(find.text('Vui lòng nhập mật khẩu.'), findsOneWidget);
     });
+
+    testWidgets('renders Google sign-in button', (
+      tester,
+    ) async {
+      final state = HotelState();
+      await tester.pumpWidget(
+        ChangeNotifierProvider<HotelState>.value(
+          value: state,
+          child: const MaterialApp(home: AuthScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tiếp tục với Google'), findsOneWidget);
+    });
   });
 
   group('ProfileScreen Widget Tests', () {

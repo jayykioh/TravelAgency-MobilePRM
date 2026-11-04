@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/hotel_state.dart';
@@ -25,9 +28,31 @@ class _AuthState extends State<AuthScreen> {
   String? errorMessage;
   String? infoMessage;
   bool verificationSent = false;
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      final auth = context.read<HotelState>().service.auth;
+      _authSubscription = auth.onAuthStateChange.listen((data) {
+        if (data.event == AuthChangeEvent.signedIn && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đăng nhập thành công!')),
+          );
+          if (Navigator.canPop(context)) {
+            Navigator.pop(context, true);
+          }
+        }
+      });
+    } catch (_) {
+      // Supabase is not initialized in some unit test environments.
+    }
+  }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     email.dispose();
     password.dispose();
     confirmPassword.dispose();
@@ -47,6 +72,11 @@ class _AuthState extends State<AuthScreen> {
     }
     if (str.contains('Password should be at least')) {
       return 'Mật khẩu phải có tối thiểu 6 ký tự.';
+    }
+    if (str.contains('provider is not enabled') ||
+        str.contains('Unsupported provider') ||
+        str.contains('validation_failed')) {
+      return 'Đăng nhập Google chưa được kích hoạt trên bảng điều khiển Supabase (Authentication > Providers > Google).';
     }
     if (str.contains('rate limit') || str.contains('over_email_send_rate_limit')) {
       return 'Quá nhiều yêu cầu. Vui lòng chờ ít phút trước khi thử lại.';
@@ -126,6 +156,31 @@ class _AuthState extends State<AuthScreen> {
   }
 
   @override
+  Future<void> signInWithGoogle() async {
+    setState(() {
+      busy = true;
+      errorMessage = null;
+      infoMessage = null;
+    });
+
+    try {
+      final auth = context.read<HotelState>().service.auth;
+      final redirect =
+          kIsWeb ? Uri.base.origin : 'io.supabase.tripc://login-callback';
+      await auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: redirect,
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => errorMessage = _cleanAuthError(e));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Widget build(BuildContext context) {
     final hotelState = context.watch<HotelState>();
     final isLoggedIn = hotelState.isAuthenticated;
@@ -550,6 +605,65 @@ class _AuthState extends State<AuthScreen> {
 
                   const SizedBox(height: 16),
 
+                  const SizedBox(height: 18),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'hoặc',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Google Sign-In Button
+                  SizedBox(
+                    height: 52,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF0F172A),
+                        side: const BorderSide(
+                          color: Color(0xFFE2E8F0),
+                          width: 1.2,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                      ),
+                      onPressed: busy ? null : signInWithGoogle,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const _GoogleLogo(size: 20),
+                          const SizedBox(width: 12),
+                          Text(
+                            register
+                                ? 'Đăng ký với Google'
+                                : 'Tiếp tục với Google',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
                   // Switch between login and register
                   Center(
                     child: TextButton(
@@ -653,4 +767,63 @@ class _AuthState extends State<AuthScreen> {
       ),
     );
   }
+}
+
+class _GoogleLogo extends StatelessWidget {
+  const _GoogleLogo({this.size = 20});
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        size: Size(size, size),
+        painter: const _GoogleLogoPainter(),
+      );
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  const _GoogleLogoPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final center = Offset(w / 2, h / 2);
+    final radius = w / 2;
+    final strokeWidth = w * 0.22;
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt;
+
+    final rect =
+        Rect.fromCircle(center: center, radius: radius - strokeWidth / 2);
+
+    // Red (top)
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(rect, -2.35, 1.8, false, paint);
+
+    // Yellow (bottom-left)
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(rect, 2.35, 1.5, false, paint);
+
+    // Green (bottom)
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(rect, 0.55, 1.8, false, paint);
+
+    // Blue (right arc and middle bar)
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(rect, -0.55, 1.1, false, paint);
+
+    final barPaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+      Rect.fromLTWH(w * 0.45, h * 0.39, w * 0.52, strokeWidth),
+      barPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
