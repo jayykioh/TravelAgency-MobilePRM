@@ -16,12 +16,14 @@ class PaymentIntentResult {
     required this.providerTxnId,
     required this.provider,
     this.isMock = false,
+    this.metadata,
   });
 
   final String paymentUrl;
   final String providerTxnId;
   final String provider;
   final bool isMock;
+  final Map<String, dynamic>? metadata;
 
   factory PaymentIntentResult.fromJson(Map<String, dynamic> json, String provider) {
     final data = json['data'] is Map<String, dynamic>

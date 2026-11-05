@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -25,6 +29,17 @@ class PaymentBottomSheet extends StatefulWidget {
   final String hotelName;
   final String roomTitle;
   final String currency;
+
+  static DateTime? _lastHandledAt;
+
+  static bool wasRecentlyHandled() {
+    if (_lastHandledAt == null) return false;
+    return DateTime.now().difference(_lastHandledAt!).inSeconds < 5;
+  }
+
+  static void markHandled() {
+    _lastHandledAt = DateTime.now();
+  }
 
   static Future<bool?> show(
     BuildContext context, {
@@ -59,6 +74,84 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
   bool _agreed = true;
   bool _isProcessing = false;
   PaymentIntentResult? _activeIntent;
+  AppLinks? _appLinks;
+  StreamSubscription<Uri>? _linkSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  void _initDeepLinks() {
+    try {
+      _appLinks = AppLinks();
+      _linkSub = _appLinks?.uriLinkStream.listen(
+        (uri) {
+          _handlePaymentDeepLink(uri);
+        },
+        onError: (err) {
+          debugPrint('PaymentBottomSheet deep link error: $err');
+        },
+      );
+    } catch (e) {
+      debugPrint('Deep links init failed: $e');
+    }
+  }
+
+  void _handlePaymentDeepLink(Uri uri) {
+    final isCallback = (uri.scheme == 'io.supabase.tripc' &&
+            uri.host == 'payment-callback') ||
+        (kIsWeb &&
+            (uri.queryParameters.containsKey('token') ||
+                uri.queryParameters.containsKey('resultCode') ||
+                uri.queryParameters.containsKey('PayerID')));
+
+    if (isCallback) {
+      PaymentBottomSheet.markHandled();
+
+      final status = uri.queryParameters['status'];
+      if (status == 'cancelled') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Giao dịch thanh toán đã bị huỷ bởi người dùng.'),
+              backgroundColor: Color(0xFFE11D48),
+            ),
+          );
+        }
+        return;
+      }
+
+      final resultCode = uri.queryParameters['resultCode'];
+      if (resultCode != null && resultCode != '0') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Thanh toán thất bại (mã $resultCode).'),
+              backgroundColor: const Color(0xFFE11D48),
+            ),
+          );
+        }
+        return;
+      }
+
+      final payerId =
+          uri.queryParameters['PayerID'] ?? uri.queryParameters['payerId'];
+      final token = uri.queryParameters['token'];
+      final orderId = uri.queryParameters['orderId'];
+      final txnId =
+          payerId ?? token ?? orderId ?? _activeIntent?.providerTxnId;
+
+      _verifyPayment(simulateSuccess: true, txnId: txnId);
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _startPayment() async {
     if (!_agreed) {
@@ -101,6 +194,14 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
             // If failed to launch external app, fallback to in-app or dialog
           }
         }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Không thể kết nối đến cổng thanh toán trực tiếp. Bạn có thể sử dụng nút xác nhận Sandbox bên dưới để thử nghiệm.',
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -113,19 +214,24 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
     }
   }
 
-  Future<void> _verifyPayment({bool simulateSuccess = false}) async {
+  Future<void> _verifyPayment({
+    bool simulateSuccess = false,
+    String? txnId,
+  }) async {
     setState(() => _isProcessing = true);
     final state = context.read<HotelState>();
     final paymentService = PaymentService(state.service.client);
 
     try {
-      if (simulateSuccess) {
-        // Direct sandbox confirmation
+      final effectiveTxnId = txnId ?? _activeIntent?.providerTxnId;
+
+      if (simulateSuccess || txnId != null) {
+        // Direct sandbox or payment gateway callback confirmation
         await paymentService.markBookingPaid(
           bookingId: widget.bookingId,
           provider: _provider.id,
           amount: widget.totalAmountUsd,
-          txnId: _activeIntent?.providerTxnId,
+          txnId: effectiveTxnId,
         );
       } else {
         // Query backend or check Supabase status

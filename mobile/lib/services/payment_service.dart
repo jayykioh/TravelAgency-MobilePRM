@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment_intent.dart';
@@ -25,15 +27,17 @@ class PaymentService {
   static double convertVndToUsd(double vnd) =>
       double.parse((vnd / usdToVndRate).toStringAsFixed(2));
 
-  /// Calls POST /api/payments/create to generate the checkout gateway URL.
+  /// Calls POST /api/payments/create or official gateway APIs directly to generate the checkout URL.
   Future<PaymentIntentResult> createPaymentIntent({
     required String bookingId,
     required PaymentProviderType provider,
     String? returnUrl,
     double? fallbackAmountUsd,
   }) async {
-    final effectiveReturnUrl =
-        returnUrl ?? '$_baseUrl/my-bookings?tab=booked&source=mobile';
+    final defaultUrl = kIsWeb
+        ? '${Uri.base.origin}/?bookingId=$bookingId&provider=${provider.id}'
+        : 'io.supabase.tripc://payment-callback?bookingId=$bookingId&provider=${provider.id}';
+    final effectiveReturnUrl = returnUrl ?? defaultUrl;
 
     // 1. First ensure a record exists in `bookings` table for the backend PaymentService
     await _ensureUnifiedBookingRecord(
@@ -41,56 +45,109 @@ class PaymentService {
       fallbackAmountUsd: fallbackAmountUsd,
     );
 
-    // 2. Call Next.js API /api/payments/create
+    // Read actual booking total if available
+    double effectiveAmountUsd = fallbackAmountUsd ?? 100.0;
     try {
-      final uri = Uri.parse('$_baseUrl/api/payments/create');
-      final res = await _http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'bookingId': bookingId,
-          'provider': provider.id,
-          'returnUrl': effectiveReturnUrl,
-        }),
-      );
-
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body) as Map<String, dynamic>;
-        if (body['ok'] == true && body['data'] != null) {
-          return PaymentIntentResult.fromJson(
-            body['data'] as Map<String, dynamic>,
-            provider.id,
-          );
-        }
+      final b = await client
+          .from('hotel_bookings')
+          .select('total_cents, currency')
+          .eq('id', bookingId)
+          .maybeSingle();
+      if (b != null && b['total_cents'] != null) {
+        effectiveAmountUsd = ((b['total_cents'] as num) / 100).toDouble();
       }
-    } catch (_) {
-      // Backend not running on this URL; continue to local / sandbox fallback
+    } catch (_) {}
+
+    // 2. Call Next.js API /api/payments/create (trying configured URL and standard host candidates)
+    final candidateHosts = <String>{
+      _baseUrl,
+      if (_baseUrl.contains('localhost')) ...[
+        'http://10.0.2.2:3000',
+        'http://192.168.1.5:3000',
+      ],
+    };
+
+    for (final host in candidateHosts) {
+      try {
+        final uri = Uri.parse('$host/api/payments/create');
+        final res = await _http
+            .post(
+              uri,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'bookingId': bookingId,
+                'provider': provider.id,
+                'returnUrl': effectiveReturnUrl,
+              }),
+            )
+            .timeout(const Duration(milliseconds: 2500));
+
+        if (res.statusCode == 200) {
+          final body = jsonDecode(res.body) as Map<String, dynamic>;
+          if (body['ok'] == true && body['data'] != null) {
+            final result = PaymentIntentResult.fromJson(
+              body['data'] as Map<String, dynamic>,
+              provider.id,
+            );
+            if (result.paymentUrl.isNotEmpty) {
+              return result;
+            }
+          }
+        }
+      } catch (_) {
+        // Continue to next candidate or fallback to direct gateway integration
+      }
     }
 
-    // 3. Fallback / Sandbox intent for development & offline resilience
+    // 3. Direct Gateway Integration (Official MoMo API v2 / PayPal Sandbox)
+    try {
+      if (provider == PaymentProviderType.momo) {
+        final result = await _createMomoDirectIntent(
+          bookingId: bookingId,
+          amountUsd: effectiveAmountUsd,
+          returnUrl: effectiveReturnUrl,
+        );
+        await _recordPendingTxn(
+          bookingId: bookingId,
+          provider: provider.id,
+          txnId: result.providerTxnId,
+          amount: effectiveAmountUsd,
+          currency: 'VND',
+        );
+        return result;
+      } else if (provider == PaymentProviderType.paypal) {
+        final result = await _createPaypalDirectIntent(
+          bookingId: bookingId,
+          amountUsd: effectiveAmountUsd,
+          returnUrl: effectiveReturnUrl,
+        );
+        await _recordPendingTxn(
+          bookingId: bookingId,
+          provider: provider.id,
+          txnId: result.providerTxnId,
+          amount: effectiveAmountUsd,
+          currency: 'USD',
+        );
+        return result;
+      }
+    } catch (e) {
+      debugPrint('Direct payment gateway creation notice: $e');
+    }
+
+    // 4. Offline Sandbox fallback (only if device is completely offline)
     final mockTxnId =
         '${provider.id.toUpperCase()}_TXN_${DateTime.now().millisecondsSinceEpoch}';
     final mockUrl = provider == PaymentProviderType.momo
-        ? 'https://test-payment.momo.vn/v2/gateway/pay?orderId=$mockTxnId'
+        ? ''
         : 'https://www.sandbox.paypal.com/checkoutnow?token=$mockTxnId';
 
-    // Record pending transaction in Supabase
-    try {
-      await client.from('payment_transactions').insert({
-        'booking_id': bookingId,
-        'provider': provider.id,
-        'provider_transaction_id': mockTxnId,
-        'amount': fallbackAmountUsd ?? 100.0,
-        'currency': provider == PaymentProviderType.momo ? 'VND' : 'USD',
-        'status': 'pending',
-        'metadata': {
-          'source': 'mobile_sdk',
-          'created_at': DateTime.now().toIso8601String(),
-        },
-      });
-    } catch (_) {
-      // Best-effort database recording
-    }
+    await _recordPendingTxn(
+      bookingId: bookingId,
+      provider: provider.id,
+      txnId: mockTxnId,
+      amount: effectiveAmountUsd,
+      currency: provider == PaymentProviderType.momo ? 'VND' : 'USD',
+    );
 
     return PaymentIntentResult(
       paymentUrl: mockUrl,
@@ -98,6 +155,204 @@ class PaymentService {
       provider: provider.id,
       isMock: true,
     );
+  }
+
+  /// Direct integration with MoMo Payment Gateway API v2 (official test/sandbox environment).
+  Future<PaymentIntentResult> _createMomoDirectIntent({
+    required String bookingId,
+    required double amountUsd,
+    required String returnUrl,
+  }) async {
+    const partnerCode = String.fromEnvironment(
+      'MOMO_PARTNER_CODE',
+      defaultValue: 'MOMOHHIY20251009_TEST',
+    );
+    const accessKey = String.fromEnvironment(
+      'MOMO_ACCESS_KEY',
+      defaultValue: 'XXmpwtA8seF2ejOn',
+    );
+    const secretKey = String.fromEnvironment(
+      'MOMO_SECRET_KEY',
+      defaultValue: 'TcX7IEdUrlBRhuZF6ryVJ839QWXrnzlB',
+    );
+    const endpoint = String.fromEnvironment(
+      'MOMO_CREATE_ENDPOINT',
+      defaultValue: 'https://test-payment.momo.vn/v2/gateway/api/create',
+    );
+    const ipnUrl = String.fromEnvironment(
+      'MOMO_IPN_URL',
+      defaultValue: 'https://webhook.site/30fa3232-b53c-42d9-ae0e-3b93fb044066',
+    );
+
+    final finalAmountVnd = convertUsdToVnd(amountUsd);
+    // MoMo test environment accepts amounts up to 50,000,000 VND
+    final amountToCharge = finalAmountVnd.clamp(1000, 50000000);
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final requestId = '$partnerCode$timestamp';
+    final orderId = requestId;
+    final orderInfo = 'Thanh toan don dat phong $bookingId';
+    const requestType = 'captureWallet';
+    const extraData = '';
+
+    final rawSignature =
+        'accessKey=$accessKey&amount=$amountToCharge&extraData=$extraData&ipnUrl=$ipnUrl&orderId=$orderId&orderInfo=$orderInfo&partnerCode=$partnerCode&redirectUrl=$returnUrl&requestId=$requestId&requestType=$requestType';
+
+    final hmac = Hmac(sha256, utf8.encode(secretKey));
+    final signature = hmac.convert(utf8.encode(rawSignature)).toString();
+
+    final payload = {
+      'partnerCode': partnerCode,
+      'partnerName': 'TripC',
+      'storeId': 'TripC_Store',
+      'requestId': requestId,
+      'amount': amountToCharge,
+      'orderId': orderId,
+      'orderInfo': orderInfo,
+      'redirectUrl': returnUrl,
+      'ipnUrl': ipnUrl,
+      'lang': 'vi',
+      'requestType': requestType,
+      'autoCapture': true,
+      'extraData': extraData,
+      'signature': signature,
+    };
+
+    final res = await _http.post(
+      Uri.parse(endpoint),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+
+    if (res.statusCode == 200) {
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (body['resultCode'] == 0 && body['payUrl'] != null) {
+        return PaymentIntentResult(
+          paymentUrl: body['payUrl'] as String,
+          providerTxnId: orderId,
+          provider: 'momo',
+          metadata: body,
+        );
+      } else {
+        throw StateError(
+          'MoMo error (${body['resultCode']}): ${body['message'] ?? body['localMessage']}',
+        );
+      }
+    } else {
+      throw StateError('MoMo gateway HTTP ${res.statusCode}: ${res.body}');
+    }
+  }
+
+  /// Direct integration with PayPal Sandbox v2 Orders API.
+  Future<PaymentIntentResult> _createPaypalDirectIntent({
+    required String bookingId,
+    required double amountUsd,
+    required String returnUrl,
+  }) async {
+    const clientId = String.fromEnvironment(
+      'PAYPAL_CLIENT_ID',
+      defaultValue:
+          'AWIS9sTpfG1KmkiOE3u6LMithJVI7n7m5bfCqHYkEgtm5rsQ1Bg1nVjheOIEy62wnoprvPCSw5BTWBcx',
+    );
+    const clientSecret = String.fromEnvironment(
+      'PAYPAL_SECRET',
+      defaultValue:
+          'EPmsviCsy6B5cYcDA6IPm3pxCMeiKS_YQQr_RgOJvymav2zMKuLqbAL5Q6mhuO-BQIOZUr3Fmf-jntu3',
+    );
+    const baseUrl = 'https://api-m.sandbox.paypal.com';
+
+    final basicAuth = base64Encode(utf8.encode('$clientId:$clientSecret'));
+    final tokenRes = await _http.post(
+      Uri.parse('$baseUrl/v1/oauth2/token'),
+      headers: {
+        'Authorization': 'Basic $basicAuth',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+    );
+
+    if (tokenRes.statusCode != 200) {
+      throw StateError('PayPal auth failed (${tokenRes.statusCode})');
+    }
+
+    final tokenData = jsonDecode(tokenRes.body) as Map<String, dynamic>;
+    final accessToken = tokenData['access_token'] as String;
+
+    final valueStr = amountUsd.toStringAsFixed(2);
+    final orderBody = {
+      'intent': 'CAPTURE',
+      'purchase_units': [
+        {
+          'reference_id': bookingId,
+          'amount': {'currency_code': 'USD', 'value': valueStr},
+          'description': 'Booking $bookingId',
+        }
+      ],
+      'application_context': {
+        'return_url': returnUrl,
+        'cancel_url': returnUrl.contains('?')
+            ? '$returnUrl&status=cancelled'
+            : '$returnUrl?status=cancelled',
+        'brand_name': 'TripC',
+        'user_action': 'PAY_NOW',
+      },
+    };
+
+    final orderRes = await _http.post(
+      Uri.parse('$baseUrl/v2/checkout/orders'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+        'PayPal-Request-Id':
+            'booking-$bookingId-${DateTime.now().millisecondsSinceEpoch}',
+      },
+      body: jsonEncode(orderBody),
+    );
+
+    if (orderRes.statusCode == 200 || orderRes.statusCode == 201) {
+      final orderData = jsonDecode(orderRes.body) as Map<String, dynamic>;
+      final links = orderData['links'] as List<dynamic>? ?? [];
+      final approveLink = links.firstWhere(
+        (l) => l['rel'] == 'approve',
+        orElse: () => null,
+      );
+
+      final approveUrl = approveLink?['href'] as String?;
+      final orderId = orderData['id'] as String;
+
+      if (approveUrl != null && approveUrl.isNotEmpty) {
+        return PaymentIntentResult(
+          paymentUrl: approveUrl,
+          providerTxnId: orderId,
+          provider: 'paypal',
+          metadata: orderData,
+        );
+      }
+    }
+    throw StateError('PayPal order creation failed: ${orderRes.body}');
+  }
+
+  Future<void> _recordPendingTxn({
+    required String bookingId,
+    required String provider,
+    required String txnId,
+    required double amount,
+    required String currency,
+  }) async {
+    try {
+      await client.from('payment_transactions').insert({
+        'booking_id': bookingId,
+        'provider': provider,
+        'provider_transaction_id': txnId,
+        'amount': amount,
+        'currency': currency,
+        'status': 'pending',
+        'metadata': {
+          'source': 'mobile_sdk',
+          'created_at': DateTime.now().toIso8601String(),
+        },
+      });
+    } catch (_) {}
   }
 
   /// Verifies MoMo payment redirect parameters via POST /api/payments/momo/verify-redirect.

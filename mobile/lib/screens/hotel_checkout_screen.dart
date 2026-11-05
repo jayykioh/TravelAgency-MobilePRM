@@ -12,6 +12,7 @@ import '../widgets/hotel_image.dart';
 import 'booking_review_screen.dart';
 import 'hotel_bookings_screen.dart';
 import 'rewards_vouchers_screen.dart';
+import '../widgets/payment_bottom_sheet.dart';
 
 const _brand = Color(0xFFFF5E1F);
 const _muted = Color(0xFF64748B);
@@ -1237,7 +1238,7 @@ class _BookingState extends State<BookingScreen> {
       });
       if (!mounted) return;
       state.clearGuestDraft();
-      await showDialog<void>(
+      final shouldPayNow = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Đã ghi nhận yêu cầu'),
@@ -1246,12 +1247,34 @@ class _BookingState extends State<BookingScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(c),
-              child: const Text('Đóng'),
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Để sau'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFA50064),
+              ),
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('Thanh toán ngay'),
             ),
           ],
         ),
       );
+
+      if (shouldPayNow == true && mounted) {
+        final totalUsd = (grandTotal / 100).toDouble();
+        await PaymentBottomSheet.show(
+          context,
+          bookingId: '${booking['id']}',
+          confirmationCode:
+              '${booking['confirmation_code'] ?? confirmationCode}',
+          totalAmountUsd: totalUsd,
+          hotelName: widget.hotel['name']?.toString() ?? 'Khách sạn',
+          roomTitle: widget.room['name']?.toString() ?? 'Phòng',
+          currency: currency,
+        );
+      }
+
       if (mounted) {
         Navigator.pushReplacement(
           context,
