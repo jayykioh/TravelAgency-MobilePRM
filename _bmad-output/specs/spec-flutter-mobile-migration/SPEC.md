@@ -1,6 +1,6 @@
 ---
 id: SPEC-flutter-mobile-migration
-companions: [api-contract.md, business-rules.md, architecture-and-state.md, ux-and-screens.md, delivery-and-quality.md, epic-1-auth-profile.md]
+companions: [api-contract.md, business-rules.md, architecture-and-state.md, ux-and-screens.md, delivery-and-quality.md, epic-1-auth-profile.md, epic-3-hotel-detail-rooms-rates.md, epic-4-guest-checkout-pending-booking.md]
 ---
 # Flutter Mobile Migration
 ## Why

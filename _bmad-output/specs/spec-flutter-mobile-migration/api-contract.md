@@ -8,8 +8,9 @@ The existing Next.js/Supabase backend is reused as-is. Do not add mobile endpoin
 |---|---|---|
 | Sign-in/register/profile | Existing project auth and profile behavior | Supabase Auth and profile screen exist in Flutter; compatibility with the current Clerk-based web identity and real RLS is unverified. |
 | Hotel search | Existing hotel query/API and hotel data | `HotelService.searchHotels` queries `hotels`; live access and full criteria behavior need verification. |
-| Hotel detail/rooms/rates | Existing hotel detail, room, and rate sources | Flutter queries `hotels`, `hotel_rooms`, and `hotel_rates`; verify schema mapping, date coverage, and permissions. |
-| Create pending booking | Existing booking operation and its business rules | Flutter inserts `hotel_bookings`; production permission, required fields, owner binding, and real ID response are unverified. |
+| Hotel detail/rooms/rates | Existing hotel detail, room, and rate sources | Flutter reads `hotels`, `hotel_rooms`, `hotel_rates` (anon reads verified 2026-11-05). Live rates only cover 2026-01-27…2026-03-30, so current stays show labelled reference prices. |
+| Hotel reviews / AI insight | Unified `reviews` table; public `POST /api/hotels/insights` | `hotel_reviews` (used by the web page) does not exist live; Flutter reads `reviews` by `entity_id`. Insight route is not Clerk-protected; end-to-end needs `APP_API_BASE_URL` and a running Next.js server. |
+| Create pending booking | Existing booking operation and its business rules | Flutter inserts `hotel_bookings` with `user_uuid = external_user_ref = auth.uid()`, requires sign-in, and treats success only when an `id` is returned. Anonymous insert is rejected (401, verified). Signed-in insert depends on `users.id = auth.uid()` and RLS; unverified. |
 | Booking history/cancel | Existing owner-scoped booking behavior | Flutter reads/updates `hotel_bookings`; verify access is bound to the signed-in owner and cancellation rules match the web. |
 | Notifications | Existing notification source | Flutter queries `notifications`; verify the current session maps to the expected `user_id` and RLS. |
 | AI chat | Existing `POST /api/chat/messages` | Flutter calls this route with the available Supabase access token; the route may require Clerk and return 401. Compatibility is unverified. |
