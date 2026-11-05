@@ -1,19 +1,25 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/voucher.dart';
 import '../providers/hotel_state.dart';
 import '../widgets/hotel_image.dart';
 import 'hotel_bookings_screen.dart';
+import '../services/voucher_service.dart';
+import 'rewards_vouchers_screen.dart';
 
 class _PriceLine extends StatelessWidget {
   const _PriceLine({
     required this.label,
     required this.value,
     this.strong = false,
+    this.color,
   });
   final String label;
   final String value;
   final bool strong;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -23,7 +29,10 @@ class _PriceLine extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: TextStyle(fontWeight: strong ? FontWeight.w900 : null),
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.w900 : null,
+              color: color,
+            ),
           ),
         ),
         Text(
@@ -31,6 +40,7 @@ class _PriceLine extends StatelessWidget {
           style: TextStyle(
             fontWeight: strong ? FontWeight.w900 : FontWeight.w600,
             fontSize: strong ? 18 : null,
+            color: color,
           ),
         ),
       ],
@@ -55,6 +65,10 @@ class _BookingState extends State<BookingScreen> {
   bool busy = false;
   String? error;
 
+  VoucherValidationResult _voucherResult = VoucherValidationResult.none;
+  bool _isValidatingVoucher = false;
+  Timer? _voucherDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +86,56 @@ class _BookingState extends State<BookingScreen> {
     phone.addListener(_syncDraft);
     specialRequests.addListener(_syncDraft);
     voucher.addListener(_syncDraft);
+
+    if (voucher.text.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkVoucherCode(voucher.text);
+      });
+    }
+  }
+
+  void _onVoucherInputChanged(String val) {
+    _voucherDebounce?.cancel();
+    _voucherDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _checkVoucherCode(val);
+      }
+    });
+  }
+
+  Future<void> _checkVoucherCode(String code) async {
+    final clean = code.trim().toUpperCase();
+    if (clean.isEmpty) {
+      if (mounted && _voucherResult.isValid) {
+        setState(() {
+          _voucherResult = VoucherValidationResult.none;
+        });
+      }
+      return;
+    }
+
+    final state = context.read<HotelState>();
+    final nightly = (widget.room['_priceCents'] as num?)?.toInt() ?? 10000;
+    final subtotalUsd = (nightly * state.nights * state.rooms) / 100.0;
+    final voucherService = VoucherService(state.service.client);
+
+    setState(() => _isValidatingVoucher = true);
+
+    try {
+      final res = await voucherService.validateVoucher(
+        code: clean,
+        cartTotalUsd: subtotalUsd,
+        userId: state.currentUser?.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _voucherResult = res;
+        _isValidatingVoucher = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isValidatingVoucher = false);
+    }
   }
 
   void _syncDraft() {
@@ -87,6 +151,7 @@ class _BookingState extends State<BookingScreen> {
 
   @override
   void dispose() {
+    _voucherDebounce?.cancel();
     name.removeListener(_syncDraft);
     email.removeListener(_syncDraft);
     phone.removeListener(_syncDraft);
@@ -100,13 +165,121 @@ class _BookingState extends State<BookingScreen> {
     super.dispose();
   }
 
+  Future<void> _pickVoucherFromWallet() async {
+    final state = context.read<HotelState>();
+    final userId = state.currentUser?.id;
+    final voucherService = VoucherService(state.service.client);
+    final wallet = await voucherService.fetchUserVouchers(userId);
+
+    if (!mounted) return;
+
+    if (wallet.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Ví voucher của bạn đang trống.'),
+          action: SnackBarAction(
+            label: 'Đổi ngay',
+            textColor: const Color(0xFFFF5E1F),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const RewardsVouchersScreen(initialTabIndex: 1),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Chọn voucher từ ví của bạn',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: wallet.length,
+                  itemBuilder: (_, i) {
+                    final uv = wallet[i];
+                    final v = uv.voucher;
+                    final code = v?.code ?? 'VOUCHER';
+                    final discount = v?.formattedDiscount ?? 'Ưu đãi';
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: (v?.categoryColor ?? const Color(0xFFFF5E1F)).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(v?.categoryIcon ?? Icons.confirmation_number_rounded, color: v?.categoryColor ?? const Color(0xFFFF5E1F)),
+                      ),
+                      title: Text(code, style: const TextStyle(fontWeight: FontWeight.w800)),
+                      subtitle: Text(discount, style: const TextStyle(color: Color(0xFF64748B), fontSize: 12)),
+                      trailing: ElevatedButton(
+                        onPressed: () {
+                          setState(() {
+                            voucher.text = code;
+                          });
+                          _checkVoucherCode(code);
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF5E1F),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        ),
+                        child: const Text('Áp dụng', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<HotelState>();
     final nightly = (widget.room['_priceCents'] as num?)?.toInt() ?? 10000;
     final subtotal = nightly * state.nights * state.rooms;
-    final tax = (subtotal * .10).round();
-    final fee = (subtotal * .05).round();
+    final discountCents = _voucherResult.isValid ? _voucherResult.discountCents : 0;
+    final discountedSubtotal = (subtotal - discountCents).clamp(0, 999999999);
+    final tax = (discountedSubtotal * .10).round();
+    final fee = (discountedSubtotal * .05).round();
+    final grandTotal = discountedSubtotal + tax + fee;
     final currency = '${widget.room['_currency'] ?? 'USD'}';
     return Scaffold(
       appBar: AppBar(title: const Text('Complete your booking')),
@@ -125,6 +298,13 @@ class _BookingState extends State<BookingScreen> {
                     height: 230,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 230,
+                      color: const Color(0xFFF1F5F9),
+                      child: const Center(
+                        child: Icon(Icons.hotel_rounded, size: 48, color: Color(0xFF94A3B8)),
+                      ),
+                    ),
                   ),
                   Container(
                     width: double.infinity,
@@ -261,14 +441,88 @@ class _BookingState extends State<BookingScreen> {
             TextFormField(
               controller: voucher,
               textCapitalization: TextCapitalization.characters,
+              onChanged: _onVoucherInputChanged,
               decoration: InputDecoration(
-                labelText: 'Voucher code',
+                labelText: 'Mã giảm giá (Voucher)',
                 prefixIcon: const Icon(Icons.local_offer_outlined),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isValidatingVoucher)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFF5E1F)),
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: 'Chọn từ ví voucher',
+                      icon: const Icon(Icons.confirmation_number_rounded, color: Color(0xFFFF5E1F)),
+                      onPressed: _pickVoucherFromWallet,
+                    ),
+                  ],
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(18),
                 ),
               ),
             ),
+            if (_voucherResult.isValid) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF86EFAC)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Đã áp dụng mã ${_voucherResult.code}: Giảm \$${_voucherResult.discountUsd.toStringAsFixed(1)}',
+                        style: const TextStyle(
+                          color: Color(0xFF15803D),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (_voucherResult.errorMessage != null && voucher.text.trim().isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFCA5A5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _voucherResult.errorMessage!,
+                        style: const TextStyle(
+                          color: Color(0xFFB91C1C),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -283,6 +537,13 @@ class _BookingState extends State<BookingScreen> {
                         'Room × ${state.nights} nights × ${state.rooms} rooms',
                     value: '${subtotal / 100} $currency',
                   ),
+                  if (_voucherResult.isValid)
+                    _PriceLine(
+                      label: 'Voucher discount (${_voucherResult.code})',
+                      value: '-${_voucherResult.discountUsd.toStringAsFixed(1)} $currency',
+                      color: const Color(0xFF16A34A),
+                      strong: true,
+                    ),
                   _PriceLine(label: 'Tax 10%', value: '${tax / 100} $currency'),
                   _PriceLine(
                     label: 'Service fee 5%',
@@ -291,7 +552,7 @@ class _BookingState extends State<BookingScreen> {
                   const Divider(),
                   _PriceLine(
                     label: 'Total',
-                    value: '${(subtotal + tax + fee) / 100} $currency',
+                    value: '${grandTotal / 100} $currency',
                     strong: true,
                   ),
                 ],
@@ -340,16 +601,26 @@ class _BookingState extends State<BookingScreen> {
         };
       });
       final subtotal = nightlyPrice * state.nights * state.rooms;
-      final tax = (subtotal * .10).round();
-      final fees = (subtotal * .05).round();
-      final grandTotal = subtotal + tax + fees;
+      final discountCents = _voucherResult.isValid ? _voucherResult.discountCents : 0;
+      final discountedSubtotal = (subtotal - discountCents).clamp(0, 999999999);
+      final tax = (discountedSubtotal * .10).round();
+      final fees = (discountedSubtotal * .05).round();
+      final grandTotal = discountedSubtotal + tax + fees;
       if (!mounted) return;
       final confirm = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Review đặt phòng'),
           content: Text(
-            '${state.day(state.start)} → ${state.day(state.end)}\n${state.guests} khách · ${state.nights} đêm\n${selected.map((r) => "${r['date']}: ${(r['price_cents'] as num) / 100} ${r['currency']}").join("\n")}\nGiá phòng: ${subtotal / 100}\nThuế 10%: ${tax / 100}\nPhí dịch vụ 5%: ${fees / 100}\nTổng: ${grandTotal / 100} ${selected.first['currency']}\nChờ xác nhận · Chưa thanh toán',
+            '${state.day(state.start)} → ${state.day(state.end)}\n'
+            '${state.guests} khách · ${state.nights} đêm\n'
+            '${selected.map((r) => "${r['date']}: ${(r['price_cents'] as num) / 100} ${r['currency']}").join("\n")}\n'
+            'Giá phòng: ${subtotal / 100} $currency\n'
+            '${_voucherResult.isValid ? "Giảm giá voucher (${_voucherResult.code}): -${_voucherResult.discountUsd.toStringAsFixed(1)} $currency\n" : ""}'
+            'Thuế 10%: ${tax / 100} $currency\n'
+            'Phí dịch vụ 5%: ${fees / 100} $currency\n'
+            'Tổng: ${grandTotal / 100} $currency\n'
+            'Chờ xác nhận · Chưa thanh toán',
           ),
           actions: [
             TextButton(
@@ -393,8 +664,13 @@ class _BookingState extends State<BookingScreen> {
         'booking_source': 'mobile',
         'metadata': {
           'nightly': selected,
-          if (voucher.text.trim().isNotEmpty)
+          if (_voucherResult.isValid) ...{
+            'voucher_code': _voucherResult.code,
+            'discount_cents': _voucherResult.discountCents,
+            'discount_usd': _voucherResult.discountUsd,
+          } else if (voucher.text.trim().isNotEmpty) ...{
             'voucher_code': voucher.text.trim().toUpperCase(),
+          },
         },
       });
       if (!mounted) return;

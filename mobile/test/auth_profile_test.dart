@@ -91,6 +91,11 @@ void main() {
     testWidgets('renders Google sign-in button', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       final state = HotelState();
       await tester.pumpWidget(
         ChangeNotifierProvider<HotelState>.value(

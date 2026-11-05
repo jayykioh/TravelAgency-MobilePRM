@@ -7,6 +7,7 @@ import '../widgets/hotel_card.dart';
 import '../widgets/guest_selector.dart';
 import 'auth_screen.dart';
 import 'hotel_bookings_screen.dart';
+import 'rewards_vouchers_screen.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -68,6 +69,16 @@ class _HomeState extends State<Home> {
       appBar: AppBar(
         title: const Text('TripC · Khách sạn'),
         actions: [
+          IconButton(
+            tooltip: 'Tcent & Vouchers',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const RewardsVouchersScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFF5E1F)),
+          ),
           IconButton(
             tooltip: 'Đăng nhập',
             onPressed: () => Navigator.push(
@@ -238,6 +249,72 @@ class _HomeState extends State<Home> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 18)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const RewardsVouchersScreen(),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF7C3AED), Color(0xFF4F46E5)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(22),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF7C3AED).withValues(alpha: 0.25),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.stars_rounded, color: Colors.white, size: 28),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                'Tcent Rewards & Vòng Quay May Mắn',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Quay thưởng mỗi ngày & đổi voucher giảm giá!',
+                                style: TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 18)),

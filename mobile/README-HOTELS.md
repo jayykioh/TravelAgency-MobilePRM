@@ -1,7 +1,20 @@
 # TripC Hotels Flutter
 
-App Flutter dựng lại native trải nghiệm Hotel Booking dựa trên UI/flow của Next.js. Scope hiện gồm Auth/Profile, Search/Filters, Detail/Rooms/Map, Guest Form/Review, booking pending/History, Notifications và AI Chat.
+App Flutter dựng lại native trải nghiệm Hotel Booking dựa trên UI/flow của Next.js. Scope hiện gồm Auth/Profile, Search/Filters, Detail/Rooms/Map, Guest Form/Review, booking pending/History, Notifications, AI Chat, và Tcent Rewards / Voucher Hub (Lucky Day Spinner, Daily Streaks, Quests, Voucher Marketplace & Wallet).
 Không có Flights, Shop, Events, Dining, Transport hoặc Partner trong scope hiện tại.
+
+### Tcent Rewards & Vouchers Hệ thống:
+- **Web Pages**: `/rewards` & `/vouchers`
+- **Web API Endpoints**:
+  - `GET /api/v1/gamification/spin` (Kiểm tra lượt quay miễn phí hôm nay: 1 lượt/24h)
+  - `POST /api/v1/gamification/spin` (Quay thưởng ngẫu nhiên: 50 TC, 100 TC, 500 TC, 2K TC, 5K TC, 10K TC, JACKPOT Voucher)
+  - `GET /api/v1/vouchers/marketplace` (Danh sách voucher có thể đổi bằng Tcent)
+  - `POST /api/v1/vouchers/exchange` (Đổi voucher bằng điểm Tcent, ghi vào `user_vouchers` và `tcent_ledger`)
+  - `GET /api/v1/vouchers/wallet` (Danh sách voucher đã sở hữu trong ví)
+  - `GET /api/v1/user/status` (Số dư Tcent, hạng thành viên, điểm pending)
+- **Tích hợp Mobile**:
+  - `RewardsVouchersScreen`: Xem số dư, quay vòng quay may mắn, theo dõi chuỗi điểm danh và đổi voucher.
+  - `hotel_checkout_screen.dart`: Chọn nhanh voucher từ ví khi đặt phòng.
 
 Chạy:
 
