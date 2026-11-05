@@ -12,6 +12,8 @@ class GuestDetails {
     required this.phone,
     this.specialRequests = '',
     this.voucherCode = '',
+    this.discountCents = 0,
+    this.discountUsd = 0.0,
   });
 
   final String name;
@@ -19,6 +21,8 @@ class GuestDetails {
   final String phone;
   final String specialRequests;
   final String voucherCode;
+  final int discountCents;
+  final double discountUsd;
 }
 
 /// Client-side validation for the guest form. The backend stays the
@@ -82,6 +86,11 @@ Map<String, dynamic> buildBookingPayload({
   final price = quote.breakdown;
   final requests = guest.specialRequests.trim();
   final voucher = guest.voucherCode.trim().toUpperCase();
+  final discountCents = guest.discountCents;
+  final discountedSubtotal = max(0, price.subtotalCents - discountCents);
+  final taxCents = discountCents > 0 ? (discountedSubtotal * 0.10).round() : price.taxCents;
+  final feesCents = discountCents > 0 ? (discountedSubtotal * 0.05).round() : price.feeCents;
+  final totalCents = discountCents > 0 ? (discountedSubtotal + taxCents + feesCents) : price.totalCents;
   return {
     'user_uuid': userId,
     'external_user_ref': userId,
@@ -100,10 +109,10 @@ Map<String, dynamic> buildBookingPayload({
       'rooms': quote.roomCount,
     },
     'special_requests': requests.isEmpty ? null : requests,
-    'total_cents': price.totalCents,
+    'total_cents': totalCents,
     'nightly_rate_cents': quote.averageNightlyCents,
-    'tax_cents': price.taxCents,
-    'fees_cents': price.feeCents,
+    'tax_cents': taxCents,
+    'fees_cents': feesCents,
     'currency': quote.currency,
     'status': 'pending',
     'payment_status': 'pending',
@@ -114,7 +123,13 @@ Map<String, dynamic> buildBookingPayload({
       'subtotal_cents': price.subtotalCents,
       'rate_source': quote.source.key,
       if (voucher.isNotEmpty) 'voucher_code': voucher,
-      if (voucher.isNotEmpty) 'voucher_applied': false,
+      if (discountCents > 0) ...{
+        'voucher_applied': true,
+        'discount_cents': discountCents,
+        'discount_usd': guest.discountUsd,
+      } else if (voucher.isNotEmpty) ...{
+        'voucher_applied': false,
+      },
     },
   };
 }

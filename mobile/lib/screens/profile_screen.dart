@@ -5,6 +5,7 @@ import '../providers/hotel_state.dart';
 import '../services/hotel_service.dart';
 import 'auth_screen.dart';
 import 'hotel_bookings_screen.dart';
+import 'rewards_vouchers_screen.dart';
 
 /// Flutter port of the React ProfileHero and SettingsList experience.
 class ProfileScreen extends StatefulWidget {
@@ -350,14 +351,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: const Color(0xFFD1FAE5),
                       iconColor: const Color(0xFF059669),
                       onTap: () {
-                        final balance = data['tcent_balance'] ?? 0;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Điểm thưởng TCent hiện có: $balance TCent.',
-                            ),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => const RewardsVouchersScreen(),
                           ),
-                        );
+                        ).then((_) => reload());
                       },
                     ),
                   ],

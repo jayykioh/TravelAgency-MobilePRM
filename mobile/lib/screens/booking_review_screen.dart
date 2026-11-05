@@ -130,8 +130,13 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                 ],
                 if (guest.voucherCode.isNotEmpty)
                   Text(
-                    'Mã ưu đãi: ${guest.voucherCode.toUpperCase()} (chưa áp dụng vào tổng)',
-                    style: const TextStyle(color: _muted),
+                    guest.discountCents > 0
+                        ? 'Mã ưu đãi: ${guest.voucherCode.toUpperCase()} (Đã giảm ${formatMoney(guest.discountCents, quote.currency)})'
+                        : 'Mã ưu đãi: ${guest.voucherCode.toUpperCase()} (chưa áp dụng vào tổng)',
+                    style: TextStyle(
+                      color: guest.discountCents > 0 ? const Color(0xFF16A34A) : _muted,
+                      fontWeight: guest.discountCents > 0 ? FontWeight.w600 : null,
+                    ),
                   ),
               ],
             ),
@@ -155,18 +160,42 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                   label: 'Tiền phòng',
                   value: formatMoney(price.subtotalCents, quote.currency),
                 ),
+                if (guest.discountCents > 0)
+                  _PriceLine(
+                    label: 'Giảm giá voucher (${guest.voucherCode.toUpperCase()})',
+                    value: '-${formatMoney(guest.discountCents, quote.currency)}',
+                    color: const Color(0xFF16A34A),
+                    strong: true,
+                  ),
                 _PriceLine(
                   label: 'Thuế (10%)',
-                  value: formatMoney(price.taxCents, quote.currency),
+                  value: formatMoney(
+                    guest.discountCents > 0
+                        ? (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.10).round()
+                        : price.taxCents,
+                    quote.currency,
+                  ),
                 ),
                 _PriceLine(
                   label: 'Phí dịch vụ (5%)',
-                  value: formatMoney(price.feeCents, quote.currency),
+                  value: formatMoney(
+                    guest.discountCents > 0
+                        ? (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.05).round()
+                        : price.feeCents,
+                    quote.currency,
+                  ),
                 ),
                 const Divider(),
                 _PriceLine(
                   label: 'Tổng cộng',
-                  value: formatMoney(price.totalCents, quote.currency),
+                  value: formatMoney(
+                    guest.discountCents > 0
+                        ? ((price.subtotalCents - guest.discountCents).clamp(0, 999999999) +
+                            (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.10).round() +
+                            (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.05).round())
+                        : price.totalCents,
+                    quote.currency,
+                  ),
                   strong: true,
                 ),
               ],
@@ -386,11 +415,13 @@ class _PriceLine extends StatelessWidget {
     required this.value,
     this.strong = false,
     this.muted = false,
+    this.color,
   });
   final String label;
   final String value;
   final bool strong;
   final bool muted;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -402,7 +433,7 @@ class _PriceLine extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              color: muted ? _muted : null,
+              color: color ?? (muted ? _muted : null),
               fontWeight: strong ? FontWeight.w900 : null,
             ),
           ),
@@ -413,7 +444,7 @@ class _PriceLine extends StatelessWidget {
             value,
             textAlign: TextAlign.right,
             style: TextStyle(
-              color: muted ? _muted : (strong ? _brand : null),
+              color: color ?? (muted ? _muted : (strong ? _brand : null)),
               fontWeight: strong ? FontWeight.w900 : FontWeight.w600,
               fontSize: strong ? 17 : null,
             ),
