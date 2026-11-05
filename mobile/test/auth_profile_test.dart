@@ -7,14 +7,17 @@ import 'package:provider/provider.dart';
 
 void main() {
   group('HotelState Auth and Draft State', () {
-    test('guest state reflects unauthenticated and provides distinct guest owner ref', () {
-      final state = HotelState();
-      expect(state.isAuthenticated, isFalse);
-      expect(state.isGuestBooking, isTrue);
-      expect(state.currentUser, isNull);
-      expect(state.bookingOwnerRef, startsWith('DEMO-'));
-      expect(state.authenticatedUserId, isEmpty);
-    });
+    test(
+      'guest state reflects unauthenticated and provides distinct guest owner ref',
+      () {
+        final state = HotelState();
+        expect(state.isAuthenticated, isFalse);
+        expect(state.isGuestBooking, isTrue);
+        expect(state.currentUser, isNull);
+        expect(state.bookingOwnerRef, startsWith('DEMO-'));
+        expect(state.authenticatedUserId, isEmpty);
+      },
+    );
 
     test('guest checkout draft retains fields and clears accurately', () {
       final state = HotelState();
@@ -58,14 +61,20 @@ void main() {
 
       expect(find.text('Đăng nhập'), findsWidgets);
       expect(find.text('Chào mừng trở lại'), findsOneWidget);
-      expect(find.byType(TextFormField), findsNWidgets(2)); // Email and Password
+      expect(
+        find.byType(TextFormField),
+        findsNWidgets(2),
+      ); // Email and Password
 
       // Switch to Register mode
       await tester.tap(find.text('Đăng ký').first);
       await tester.pumpAndSettle();
 
       expect(find.text('Bắt đầu cùng TripC'), findsOneWidget);
-      expect(find.byType(TextFormField), findsNWidgets(3)); // Email, Password, Confirm Password
+      expect(
+        find.byType(TextFormField),
+        findsNWidgets(3),
+      ); // Email, Password, Confirm Password
     });
 
     testWidgets('client-side email validation warns on invalid input', (
@@ -88,9 +97,7 @@ void main() {
       expect(find.text('Vui lòng nhập mật khẩu.'), findsOneWidget);
     });
 
-    testWidgets('renders Google sign-in button', (
-      tester,
-    ) async {
+    testWidgets('renders Google sign-in button', (tester) async {
       final state = HotelState();
       await tester.pumpWidget(
         ChangeNotifierProvider<HotelState>.value(
@@ -100,28 +107,34 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Tiếp tục với Google'), findsOneWidget);
+      final google = find.text('Tiếp tục với Google');
+      await tester.scrollUntilVisible(
+        google,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(google, findsOneWidget);
     });
   });
 
   group('ProfileScreen Widget Tests', () {
-    testWidgets('shows guest preview view with login button when not authenticated', (
-      tester,
-    ) async {
-      final state = HotelState();
-      await tester.pumpWidget(
-        ChangeNotifierProvider<HotelState>.value(
-          value: state,
-          child: const MaterialApp(home: ProfileScreen()),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      'shows guest preview view with login button when not authenticated',
+      (tester) async {
+        final state = HotelState();
+        await tester.pumpWidget(
+          ChangeNotifierProvider<HotelState>.value(
+            value: state,
+            child: const MaterialApp(home: ProfileScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Hồ sơ cá nhân'), findsOneWidget);
-      expect(find.text('Chào mừng bạn đến với TripC'), findsOneWidget);
-      expect(find.text('Đăng nhập / Đăng ký'), findsOneWidget);
-      expect(find.text('Lợi ích thành viên TripC'), findsOneWidget);
-    });
+        expect(find.text('Hồ sơ cá nhân'), findsOneWidget);
+        expect(find.text('Chào mừng bạn đến với TripC'), findsOneWidget);
+        expect(find.text('Đăng nhập / Đăng ký'), findsOneWidget);
+        expect(find.text('Lợi ích thành viên TripC'), findsOneWidget);
+      },
+    );
   });
 }
-

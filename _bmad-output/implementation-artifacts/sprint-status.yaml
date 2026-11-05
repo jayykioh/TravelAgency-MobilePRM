@@ -56,14 +56,19 @@ blockers:
   - task: 4-3-tạo-booking-pending-an-toàn
     status: open
     reason: Code hoàn chỉnh (user_uuid = auth.uid, chống gửi trùng, chỉ báo 
-      thành công khi có ID). Insert anon bị từ chối 401 (đã kiểm). Chưa chứng 
-      minh insert với session đăng nhập vì cần users.id = auth.uid và RLS cho 
-      phép.
+      thành công khi có ID). Insert anon bị từ chối 42501 (đã kiểm 05/11/2026). 
+      Nguyên nhân gốc (schema) - users.clerk_id NOT NULL và dòng users chỉ được 
+      web tạo qua Clerk + service-role (/api/sync-user); không có trigger từ 
+      auth.users. Tài khoản Supabase Auth trên mobile vì vậy không có dòng users 
+      nên insert với session đăng nhập dự kiến lỗi 23503/42501. Cần quyết định 
+      backend (cầu nối Supabase Auth → users + RLS insert hotel_bookings).
   - task: 3-2-xem-ai-insight-và-reviews
     status: open
     reason: Code hoàn chỉnh. hotel_reviews không tồn tại trên DB thật nên đọc 
-      bảng reviews; chưa có review published để kiểm. Insight cần Next.js chạy 
-      với APP_API_BASE_URL để nghiệm thu end-to-end.
+      bảng reviews; 8 khách sạn kiểm đều chưa có review published. Insight đã 
+      chạy qua Next.js local (05/11/2026) - route trả 500 do DEEPSEEK_API_KEY 
+      không hợp lệ (DeepSeek authentication_error); app hiện lỗi + thử lại 
+      đúng thiết kế. Cần key DeepSeek hợp lệ để nghiệm thu nội dung AI.
   - task: 5-3-hủy-đơn-pending
     status: open
     reason: Code update đã có nhưng chưa chứng minh production RLS cho phép hủy 

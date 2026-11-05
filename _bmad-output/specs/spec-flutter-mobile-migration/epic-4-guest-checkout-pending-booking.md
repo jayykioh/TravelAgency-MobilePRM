@@ -56,9 +56,11 @@ Không bao gồm: thanh toán online, xác thực voucher qua `/api/v1/vouchers/
 
 ### Tiêu chí chấp nhận
 - Widget test: gửi một lần, payload có `user_uuid`, tổng 46000 cents, màn kết quả hiện `booking-123`. Lỗi RLS giữ người dùng ở màn xem lại, không lộ thông báo gốc, thử lại dùng cùng mã xác nhận.
-- **Backend thật:** insert không kèm session bị từ chối (HTTP 401, đã kiểm 05/11/2026). Insert với session đã đăng nhập **chưa được chứng minh**.
+- **Backend thật:** insert không kèm session bị từ chối (`42501`, đã kiểm 05/11/2026); app hiển thị "Backend hiện tại không cho phép phiên này tạo đơn (RLS). Đơn chưa được tạo." Insert với session đã đăng nhập **chưa được chứng minh**.
+- Kiểm thử live 05/11/2026 (`mobile/test_live/epic34_live_test.dart`): payload từ quote thật có tổng = tiền phòng × 1.15, `status/payment_status = pending`, không có `nights_count`; guard phía app chặn khi chưa có session.
 
 ### Blocker còn mở
+- **Nguyên nhân gốc (đã đối chiếu migrations):** `users.clerk_id` là `NOT NULL UNIQUE` và dòng `users` chỉ được web tạo bằng service-role sau Clerk (`Project/app/api/sync-user/route.ts`, Clerk webhook). Không có trigger nào từ `auth.users` sang `users`. Vì vậy tài khoản Supabase Auth trên mobile không có dòng `users`, insert hotel_bookings sẽ lỗi FK `23503` (hoặc `42501` nếu RLS chặn trước). Đây là quyết định backend (cầu nối Supabase Auth → `users`, RLS insert), nằm ngoài phạm vi app.
 - Schema snapshot yêu cầu `hotel_bookings.user_uuid NOT NULL REFERENCES users(id)`. Insert chỉ thành công nếu `users.id` của người dùng **bằng** Supabase `auth.uid()` và RLS cho phép insert với session đó. Web hiện tạo booking bằng service-role server sau Clerk auth, nên cả hai điều kiện đều chưa được bảo đảm. Nếu thất bại, app báo lỗi `42501`/`23503` rõ ràng. Không sửa backend; ghi lại kết quả thử và giữ 4-3 ở trạng thái chặn cho đến khi có bằng chứng.
 
 ## Điều kiện hoàn tất Epic 4

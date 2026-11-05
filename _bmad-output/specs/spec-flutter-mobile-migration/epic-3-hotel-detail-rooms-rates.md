@@ -23,7 +23,7 @@ Không bao gồm: viết review, yêu thích/chia sẻ, so sánh giá đối tá
 | `hotel_rates` | Đọc được; ~28.950 dòng, ngày từ 2026-01-27 đến 2026-03-30. Ngày hiện tại không có rate → app dùng giá tham khảo. |
 | `hotel_reviews` | **Không tồn tại** trên DB thật (PGRST205), dù trang web vẫn query bảng này. |
 | `reviews` | Tồn tại, có `entity_id`, `rating`, `title`, `comment`, `status`; anon đọc ra rỗng cho khách sạn đã thử. |
-| `/api/hotels/insights` | Không bị Clerk middleware chặn. Chưa chạy end-to-end vì Next.js local không chạy lúc kiểm tra. |
+| `/api/hotels/insights` | Không bị Clerk middleware chặn. Đã gọi qua Next.js local: route trả 500 vì `DEEPSEEK_API_KEY` không hợp lệ (DeepSeek `authentication_error`). |
 
 ## Story 3-1 — Gallery và nội dung chi tiết
 
@@ -82,7 +82,8 @@ Không bao gồm: viết review, yêu thích/chia sẻ, so sánh giá đối tá
 
 ## Trạng thái hiện tại
 - **3-1, 3-3, 3-4 — done.** Đã làm lại theo quy tắc trên.
-- **3-2 — review.** Code hoàn chỉnh. Còn thiếu bằng chứng insight end-to-end (cần chạy Next.js với `DEEPSEEK_API_KEY` phía server) và một khách sạn có review published để kiểm tra hiển thị.
+- **3-2 — review.** Code hoàn chỉnh. Còn thiếu: key DeepSeek hợp lệ phía server để nghiệm thu nội dung AI (đường gọi Flutter → Next.js đã chạy, lỗi 500 được app hiển thị + thử lại), và một khách sạn có review published.
+- **Kiểm thử live 05/11/2026** (`mobile/test_live/epic34_live_test.dart`, 8 khách sạn thật): lưu trú 10–12/03/2026 → 32/32 phòng giá chính xác; 10–12/12/2026 → 32/32 giá tham khảo; 4 khách/2 phòng qua tháng → giá chính xác, tiền phòng × 2, mọi phòng đủ sức chứa. Thuế/phí đúng 10%/5%, phòng giá chính xác xếp trước.
 
 ## Source liên quan
 - Flutter: `mobile/lib/screens/hotel_detail_screen.dart`, `mobile/lib/models/room_quote.dart`, `hotel_review.dart`, `hotel_insight.dart`, `mobile/lib/utils/hotel_format.dart`, `mobile/lib/services/hotel_service.dart` (`roomOptions`, `reviewsFor`, `hotelInsights`).
