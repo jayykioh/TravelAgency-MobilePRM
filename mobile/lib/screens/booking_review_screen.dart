@@ -82,6 +82,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         (route) => route.isFirst,
       );
     } catch (e) {
+      debugPrint('Booking submission failed: $e');
       if (mounted) setState(() => error = describeBookingError(e));
     } finally {
       if (mounted) setState(() => busy = false);

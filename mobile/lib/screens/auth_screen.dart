@@ -124,6 +124,7 @@ class _AuthState extends State<AuthScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Đăng ký và tạo phiên thành công!')),
           );
+          unawaited(context.read<HotelState>().service.ensureUserProfile());
           if (Navigator.canPop(context)) {
             Navigator.pop(context, true);
           }
@@ -138,6 +139,7 @@ class _AuthState extends State<AuthScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Đăng nhập thành công!')),
           );
+          unawaited(context.read<HotelState>().service.ensureUserProfile());
           if (Navigator.canPop(context)) {
             Navigator.pop(context, true);
           }

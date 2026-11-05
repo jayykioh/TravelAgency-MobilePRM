@@ -896,7 +896,7 @@ class _BookingState extends State<BookingScreen> {
                     height: 230,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       height: 230,
                       color: const Color(0xFFF1F5F9),
                       child: const Center(
@@ -1199,6 +1199,7 @@ class _BookingState extends State<BookingScreen> {
       final confirmationCode =
           'HTL-${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase()}';
       final booking = await state.service.createBooking({
+        'user_uuid': state.authenticatedUserId.isNotEmpty ? state.authenticatedUserId : null,
         'external_user_ref': state.bookingOwnerRef,
         'hotel_id': widget.hotel['id'],
         'room_id': widget.room['id'],

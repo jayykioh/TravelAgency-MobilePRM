@@ -59,7 +59,6 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
   bool _agreed = true;
   bool _isProcessing = false;
   PaymentIntentResult? _activeIntent;
-  String? _statusMessage;
 
   Future<void> _startPayment() async {
     if (!_agreed) {
@@ -73,7 +72,6 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
 
     setState(() {
       _isProcessing = true;
-      _statusMessage = 'Đang khởi tạo cổng thanh toán ${_provider.title}...';
     });
 
     final state = context.read<HotelState>();
@@ -91,7 +89,6 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
       setState(() {
         _activeIntent = intent;
         _isProcessing = false;
-        _statusMessage = 'Đang mở cổng thanh toán ${_provider.title}...';
       });
 
       // Launch URL in browser or external app (MoMo / PayPal)
@@ -109,7 +106,6 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
       if (!mounted) return;
       setState(() {
         _isProcessing = false;
-        _statusMessage = 'Lỗi khởi tạo: $e';
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Lỗi khởi tạo thanh toán: $e')),
@@ -541,3 +537,4 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
     );
   }
 }
+

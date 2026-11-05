@@ -116,8 +116,8 @@ class PaymentService {
         body: jsonEncode({
           'orderId': orderId,
           'resultCode': resultCode,
-          if (message != null) 'message': message,
-          if (signature != null) 'signature': signature,
+          'message': ?message,
+          'signature': ?signature,
         }),
       );
 
@@ -339,3 +339,4 @@ class PaymentService {
     }
   }
 }
+

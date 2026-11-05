@@ -101,6 +101,67 @@ void main() {
     expect(payload['partner_id'], isNull);
   });
 
+  test('payload sets partner_id to null when reference price has partnerId', () {
+    final quoteWithPartner = RoomQuote(
+      room: const {'id': 'room-1', 'title': 'Deluxe'},
+      start: DateTime(2026, 11, 5),
+      end: DateTime(2026, 11, 8),
+      roomCount: 1,
+      guestCount: 2,
+      nights: const [
+        NightRate(date: '2026-11-05', priceCents: 9000),
+        NightRate(date: '2026-11-06', priceCents: 9000),
+        NightRate(date: '2026-11-07', priceCents: 9000),
+      ],
+      currency: 'USD',
+      source: RateSource.fallbackRate,
+      partnerId: 'unverified-partner-uuid',
+    );
+    final payload = buildBookingPayload(
+      userId: 'user-123',
+      hotel: const {'id': 'hotel-abc'},
+      quote: quoteWithPartner,
+      guest: const GuestDetails(
+        name: 'James Bond',
+        email: 'bond@mi6.gov.uk',
+        phone: '0123456789',
+      ),
+      adults: 2,
+      children: 0,
+      confirmationCode: 'BOND0007',
+    );
+    expect(payload['partner_id'], isNull);
+    expect((payload['metadata'] as Map)['rate_source'], 'fallback_rate');
+  });
+
+  test('payload strips whitespace and empty partner_id', () {
+    final quote = RoomQuote(
+      room: const {'id': 'room-1', 'title': 'Deluxe'},
+      start: DateTime(2026, 11, 5),
+      end: DateTime(2026, 11, 6),
+      roomCount: 1,
+      guestCount: 2,
+      nights: const [NightRate(date: '2026-11-05', priceCents: 9000)],
+      currency: 'USD',
+      source: RateSource.exact,
+      partnerId: '   ',
+    );
+    final payload = buildBookingPayload(
+      userId: 'user-123',
+      hotel: const {'id': 'hotel-abc'},
+      quote: quote,
+      guest: const GuestDetails(
+        name: 'James Bond',
+        email: 'bond@mi6.gov.uk',
+        phone: '0123456789',
+      ),
+      adults: 2,
+      children: 0,
+      confirmationCode: 'BOND0007',
+    );
+    expect(payload['partner_id'], isNull);
+  });
+
   test('payload refuses a missing user id', () {
     expect(
       () => buildBookingPayload(
