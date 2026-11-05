@@ -78,7 +78,8 @@ class _AuthState extends State<AuthScreen> {
         str.contains('validation_failed')) {
       return 'Đăng nhập Google chưa được kích hoạt trên bảng điều khiển Supabase (Authentication > Providers > Google).';
     }
-    if (str.contains('rate limit') || str.contains('over_email_send_rate_limit')) {
+    if (str.contains('rate limit') ||
+        str.contains('over_email_send_rate_limit')) {
       return 'Quá nhiều yêu cầu. Vui lòng chờ ít phút trước khi thử lại.';
     }
     if (str.contains('SocketException') ||
@@ -155,7 +156,6 @@ class _AuthState extends State<AuthScreen> {
     }
   }
 
-  @override
   Future<void> signInWithGoogle() async {
     setState(() {
       busy = true;
@@ -165,8 +165,9 @@ class _AuthState extends State<AuthScreen> {
 
     try {
       final auth = context.read<HotelState>().service.auth;
-      final redirect =
-          kIsWeb ? Uri.base.origin : 'io.supabase.tripc://login-callback';
+      final redirect = kIsWeb
+          ? Uri.base.origin
+          : 'io.supabase.tripc://login-callback';
       await auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: redirect,
@@ -181,6 +182,7 @@ class _AuthState extends State<AuthScreen> {
     }
   }
 
+  @override
   Widget build(BuildContext context) {
     final hotelState = context.watch<HotelState>();
     final isLoggedIn = hotelState.isAuthenticated;
@@ -203,7 +205,10 @@ class _AuthState extends State<AuthScreen> {
             child: Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
                 children: [
                   // Brand Header
                   Center(
@@ -219,7 +224,9 @@ class _AuthState extends State<AuthScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFF5E1F).withValues(alpha: 0.25),
+                            color: const Color(
+                              0xFFFF5E1F,
+                            ).withValues(alpha: 0.25),
                             blurRadius: 16,
                             offset: const Offset(0, 8),
                           ),
@@ -282,12 +289,16 @@ class _AuthState extends State<AuthScreen> {
                               duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
-                                color: !register ? Colors.white : Colors.transparent,
+                                color: !register
+                                    ? Colors.white
+                                    : Colors.transparent,
                                 borderRadius: BorderRadius.circular(99),
                                 boxShadow: !register
                                     ? [
                                         BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.06),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.06,
+                                          ),
                                           blurRadius: 8,
                                           offset: const Offset(0, 2),
                                         ),
@@ -298,8 +309,9 @@ class _AuthState extends State<AuthScreen> {
                                 'Đăng nhập',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontWeight:
-                                      !register ? FontWeight.w800 : FontWeight.w600,
+                                  fontWeight: !register
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
                                   color: !register
                                       ? const Color(0xFFFF5E1F)
                                       : const Color(0xFF64748B),
@@ -323,12 +335,16 @@ class _AuthState extends State<AuthScreen> {
                               duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               decoration: BoxDecoration(
-                                color: register ? Colors.white : Colors.transparent,
+                                color: register
+                                    ? Colors.white
+                                    : Colors.transparent,
                                 borderRadius: BorderRadius.circular(99),
                                 boxShadow: register
                                     ? [
                                         BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.06),
+                                          color: Colors.black.withValues(
+                                            alpha: 0.06,
+                                          ),
                                           blurRadius: 8,
                                           offset: const Offset(0, 2),
                                         ),
@@ -339,8 +355,9 @@ class _AuthState extends State<AuthScreen> {
                                 'Đăng ký',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontWeight:
-                                      register ? FontWeight.w800 : FontWeight.w600,
+                                  fontWeight: register
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
                                   color: register
                                       ? const Color(0xFFFF5E1F)
                                       : const Color(0xFF64748B),
@@ -365,8 +382,11 @@ class _AuthState extends State<AuthScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.error_outline,
-                              color: Color(0xFFDC2626), size: 22),
+                          const Icon(
+                            Icons.error_outline,
+                            color: Color(0xFFDC2626),
+                            size: 22,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -442,8 +462,10 @@ class _AuthState extends State<AuthScreen> {
                       prefixIcon: const Icon(Icons.email_outlined),
                       filled: true,
                       fillColor: Colors.white,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
                         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
@@ -454,15 +476,18 @@ class _AuthState extends State<AuthScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide:
-                            const BorderSide(color: Color(0xFFFF5E1F), width: 1.8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFFFF5E1F),
+                          width: 1.8,
+                        ),
                       ),
                     ),
                     validator: (val) {
                       final text = val?.trim() ?? '';
                       if (text.isEmpty) return 'Vui lòng nhập email.';
-                      final emailRegex =
-                          RegExp(r'^[\w\.\-]+@[\w\-]+\.[a-zA-Z]{2,}$');
+                      final emailRegex = RegExp(
+                        r'^[\w\.\-]+@[\w\-]+\.[a-zA-Z]{2,}$',
+                      );
                       if (!emailRegex.hasMatch(text)) {
                         return 'Email không hợp lệ.';
                       }
@@ -475,8 +500,9 @@ class _AuthState extends State<AuthScreen> {
                   TextFormField(
                     controller: password,
                     obscureText: obscurePassword,
-                    textInputAction:
-                        register ? TextInputAction.next : TextInputAction.done,
+                    textInputAction: register
+                        ? TextInputAction.next
+                        : TextInputAction.done,
                     onFieldSubmitted: (_) => submit(),
                     decoration: InputDecoration(
                       labelText: 'Mật khẩu',
@@ -493,8 +519,10 @@ class _AuthState extends State<AuthScreen> {
                       ),
                       filled: true,
                       fillColor: Colors.white,
-                      contentPadding:
-                          const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
                         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
@@ -505,8 +533,10 @@ class _AuthState extends State<AuthScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide:
-                            const BorderSide(color: Color(0xFFFF5E1F), width: 1.8),
+                        borderSide: const BorderSide(
+                          color: Color(0xFFFF5E1F),
+                          width: 1.8,
+                        ),
                       ),
                     ),
                     validator: (val) {
@@ -536,25 +566,35 @@ class _AuthState extends State<AuthScreen> {
                                 ? Icons.visibility_outlined
                                 : Icons.visibility_off_outlined,
                           ),
-                          onPressed: () => setState(() =>
-                              obscureConfirmPassword = !obscureConfirmPassword),
+                          onPressed: () => setState(
+                            () => obscureConfirmPassword =
+                                !obscureConfirmPassword,
+                          ),
                         ),
                         filled: true,
                         fillColor: Colors.white,
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 16),
+                          horizontal: 20,
+                          vertical: 16,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(18),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFE2E8F0),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(18),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFFF5E1F), width: 1.8),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFFF5E1F),
+                            width: 1.8,
+                          ),
                         ),
                       ),
                       validator: (val) {
@@ -713,7 +753,9 @@ class _AuthState extends State<AuthScreen> {
                             borderRadius: BorderRadius.circular(99),
                           ),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
                         ),
                         onPressed: busy
                             ? null
@@ -723,7 +765,8 @@ class _AuthState extends State<AuthScreen> {
                                   builder: (ctx) => AlertDialog(
                                     title: const Text('Xác nhận đăng xuất'),
                                     content: const Text(
-                                        'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản này?'),
+                                      'Bạn có chắc chắn muốn đăng xuất khỏi tài khoản này?',
+                                    ),
                                     actions: [
                                       TextButton(
                                         onPressed: () =>
@@ -732,10 +775,12 @@ class _AuthState extends State<AuthScreen> {
                                       ),
                                       FilledButton(
                                         style: FilledButton.styleFrom(
-                                          backgroundColor:
-                                              const Color(0xFFDC2626),
+                                          backgroundColor: const Color(
+                                            0xFFDC2626,
+                                          ),
                                         ),
-                                        onPressed: () => Navigator.pop(ctx, true),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
                                         child: const Text('Đăng xuất'),
                                       ),
                                     ],
@@ -774,10 +819,8 @@ class _GoogleLogo extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => CustomPaint(
-        size: Size(size, size),
-        painter: const _GoogleLogoPainter(),
-      );
+  Widget build(BuildContext context) =>
+      CustomPaint(size: Size(size, size), painter: const _GoogleLogoPainter());
 }
 
 class _GoogleLogoPainter extends CustomPainter {
@@ -796,8 +839,10 @@ class _GoogleLogoPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.butt;
 
-    final rect =
-        Rect.fromCircle(center: center, radius: radius - strokeWidth / 2);
+    final rect = Rect.fromCircle(
+      center: center,
+      radius: radius - strokeWidth / 2,
+    );
 
     // Red (top)
     paint.color = const Color(0xFFEA4335);

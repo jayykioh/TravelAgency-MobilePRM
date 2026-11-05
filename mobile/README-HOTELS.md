@@ -5,7 +5,7 @@ Không có Flights, Shop, Events, Dining, Transport hoặc Partner trong scope h
 
 Chạy:
 
-Chạy nhanh bằng file cấu hình (khuyên dùng):
+Chạy nhanh bằng file cấu hình (khuyên dùng). Sao chép `env.example.json` thành `env.json` (đã gitignore) và điền các giá trị **client-safe**: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `APP_API_BASE_URL`. Không đưa service-role key, Clerk secret, khóa thanh toán hoặc khóa AI vào file này:
 ```powershell
 flutter run -d chrome --web-port=3000 --dart-define-from-file=env.json
 ```
@@ -20,5 +20,5 @@ Android debug: `flutter run` với cùng các `dart-define`. Chỉ build APK rel
 Không thay đổi backend/API/database/auth/RLS. Supabase Auth và RLS phải được project hiện hữu cho phép. Không dùng service-role key.
 Web hiện dùng Clerk; SDK session Supabase chưa được kiểm chứng tương thích với policies thật. Chat route hiện hữu cũng có thể yêu cầu Clerk; nếu session Flutter không được chấp nhận thì ghi blocker, không tạo API mobile mới.
 Code Flutter hiện ghi vào `hotel_bookings` và hiển thị pending/unpaid; schema, RLS và phản hồi ID thật cần xác minh trên backend hiện hữu. Không thanh toán, không giữ/trừ inventory, không bảo đảm chống oversell hoặc price validation phía server. Đây là yêu cầu đặt phòng, không phải xác nhận phòng.
-Màn checkout hiện tính thêm 10% thuế và 5% phí ở client; cần đối chiếu với logic giá hiện hữu của Next.js/backend trước khi xem là đúng nghiệp vụ.
+Checkout tính thuế 10% và phí dịch vụ 5% trên tiền phòng, giống `BookingSidebar.tsx` và `checkout.service.ts` của web. Tiền phòng là tổng giá từng đêm của đối tác rẻ nhất phủ đủ đêm. Nếu không có rate cho đúng ngày, app hiển thị "Giá tham khảo" và ghi `metadata.rate_source`. Gửi yêu cầu đặt phòng bắt buộc đăng nhập.
 Không thay đổi backend hoặc database để chạy app.

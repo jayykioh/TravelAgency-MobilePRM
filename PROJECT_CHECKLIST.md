@@ -31,13 +31,13 @@ Statuses below follow the sprint tracker and a source-file inventory. A **Done**
 | Hotel filters, sorting, clear filters | Done in client | `filter_section.dart` modernized with FilterChips, active filter badges, active chip bar with quick removal, sorting options, and clear all filters. |
 | Hotel map/list selection | Done in tracker | `hotels_map_screen.dart` exists and story 2-3 is done. Confirm map data and external map handoff in acceptance. |
 | Loading, empty, error, retry states | Done in tracker | Story 2-4 is done; acceptance must still exercise network and authorization failures. |
-| Hotel details, gallery, amenities, policies | Done in tracker | `hotel_detail_screen.dart`; story 3-1 is done. |
-| AI insight and reviews | In progress | Models and detail UI exist; actual review/aggregate source needs verification. |
-| Rooms and rate fallback | Done in tracker | `hotel_service.dart`, `hotel_room.dart`, `hotel_rate.dart`; verify rate rules against existing backend data. |
-| Room choice and reserve summary | Done in tracker | Detail screen and provider; story 3-4 is done. |
-| Guest form and retained draft | In progress | `hotel_checkout_screen.dart` exists; finish draft/auth/back-navigation checks. |
-| Checkout summary and price breakdown | Done in tracker | Checkout screen exists. Its client-side 10% tax and 5% service fee still require confirmation against current web/backend rules. |
-| Create pending booking | In progress / blocked | Insert to `hotel_bookings` exists; production RLS, required schema, owner binding, real ID, and duplicate-submit behavior are unverified. |
+| Hotel details, gallery, amenities, policies | Done in client | `hotel_detail_screen.dart`: swipe/fullscreen gallery, jsonb address/policies, expandable description. Spec: `epic-3-hotel-detail-rooms-rates.md`. |
+| AI insight and reviews | Review | Calls public `/api/hotels/insights`; reviews from unified `reviews` (legacy `hotel_reviews` missing live). No invented ratings. Needs running Next.js + a published review for acceptance. |
+| Rooms and rate fallback | Done in client | `room_quote.dart`: per-night sum from cheapest full-coverage partner, labelled reference price otherwise; no invented default price. Unit tested. |
+| Room choice and reserve summary | Done in client | Selection in `HotelState`, reserve bar total incl. tax/fee, stale quote cleared when stay changes. Widget tested. |
+| Guest form and retained draft | Done in client | `GuestDetailsScreen`: validators, draft kept across back/auth, profile prefill. Widget tested. Spec: `epic-4-guest-checkout-pending-booking.md`. |
+| Checkout summary and price breakdown | Done in client | `BookingReviewScreen`: per-night lines, 10% tax + 5% fee — matches web `BookingSidebar.tsx` and `checkout.service.ts`. |
+| Create pending booking | In progress / blocked | Sign-in required, `user_uuid = auth.uid()`, retry reuses confirmation code, success only with real `id`. Anon insert denied (401). Signed-in insert under live RLS still unverified. |
 | Booking list/filter | In progress | `hotel_bookings_screen.dart` exists; verify owner scoping and filters with a real session. |
 | Booking detail | Done in tracker | Story 5-2 is done; verify access to another user's booking is denied. |
 | Cancel pending booking | In progress / blocked | Update exists; confirm current-user ownership and backend cancellation rules. |
@@ -55,7 +55,7 @@ Statuses below follow the sprint tracker and a source-file inventory. A **Done**
 - [ ] Verify booking history and cancellation are restricted to the signed-in owner.
 - [ ] Verify notifications use the authenticated user's real identity and existing permissions.
 - [ ] Verify the existing chat route accepts the Flutter session; configure `APP_API_BASE_URL` for the demo.
-- [ ] Reconcile checkout price breakdown with the existing web/backend calculation.
+- [x] Reconcile checkout price breakdown with the existing web/backend calculation (10% tax + 5% fee, per `checkout.service.ts`).
 
 ## Directory guide
 

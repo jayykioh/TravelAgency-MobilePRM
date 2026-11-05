@@ -4,6 +4,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../models/hotel_insight.dart';
+import '../models/hotel_review.dart';
+import '../models/room_quote.dart';
+
 /// Repository for all Hotel Supabase reads/writes and rate fallback rules.
 class HotelService {
   HotelService(this.client);
@@ -102,49 +106,145 @@ class HotelService {
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> roomsFor({
-    required String hotelId,
+  /// Active rooms that fit the party, each priced for the stay with
+  /// [buildRoomQuote]. Rates come only from existing `hotel_rates` rows.
+  Future<List<RoomOption>> roomOptions({
+    required Map<String, dynamic> hotel,
+    required DateTime start,
+    required DateTime end,
+    required int guests,
+    required int rooms,
+  }) async {
+    final perRoom = (guests / (rooms < 1 ? 1 : rooms)).ceil();
+    final roomRows = await client
+        .from('hotel_rooms')
+        .select()
+        .eq('hotel_id', '${hotel['id']}')
+        .eq('status', 'active')
+        .gte('capacity', perRoom)
+        .order('capacity');
+    if (roomRows.isEmpty) return [];
+    final ids = roomRows.map((room) => room['id']).whereType<String>().toList();
+    const columns =
+        'id,room_id,partner_id,date,price_cents,currency,available_rooms,'
+        'min_nights,refundable,breakfast_included,cancellation_policy,rate_plan';
+    // Rates for the requested stay (exact quotes).
+    final stayRates = await client
+        .from('hotel_rates')
+        .select(columns)
+        .inFilter('room_id', ids)
+        .gte('date', day(start))
+        .lt('date', day(end));
+    // Most recent known rates (reference fallback when the stay is uncovered).
+    final latestRates = await client
+        .from('hotel_rates')
+        .select(columns)
+        .inFilter('room_id', ids)
+        .order('date', ascending: false)
+        .limit(ids.length * 20);
+    final seen = <String>{};
+    final ratesByRoom = <String, List<Map<String, dynamic>>>{};
+    for (final rate in [...stayRates, ...latestRates]) {
+      if (!seen.add('${rate['id']}')) continue;
+      ratesByRoom.putIfAbsent('${rate['room_id']}', () => []).add(rate);
+    }
+    final options = roomRows.map((room) {
+      final quote = buildRoomQuote(
+        room: room,
+        rates: ratesByRoom['${room['id']}'] ?? const [],
+        start: start,
+        end: end,
+        roomCount: rooms,
+        guestCount: guests,
+        hotelBestPriceCents: hotel['best_price'] as num?,
+      );
+      return RoomOption(room: room, quote: quote);
+    }).toList();
+    options.sort((a, b) {
+      if (a.quote == null) return b.quote == null ? 0 : 1;
+      if (b.quote == null) return -1;
+      final exact = (a.quote!.source.isReference ? 1 : 0).compareTo(
+        b.quote!.source.isReference ? 1 : 0,
+      );
+      if (exact != 0) return exact;
+      return a.quote!.subtotalCents.compareTo(b.quote!.subtotalCents);
+    });
+    return options;
+  }
+
+  /// Approved/published reviews for a hotel from the existing unified
+  /// `reviews` table (the legacy `hotel_reviews` table is absent on the live
+  /// backend). Read-only.
+  Future<List<HotelReview>> reviewsFor(String hotelId) async {
+    final rows = await client
+        .from('reviews')
+        .select('id,rating,title,comment,is_verified,created_at')
+        .eq('entity_id', hotelId)
+        .eq('status', 'published')
+        .order('created_at', ascending: false)
+        .limit(10);
+    return rows.map(HotelReview.fromJson).toList();
+  }
+
+  /// Calls the existing public web route `POST /api/hotels/insights`.
+  /// Returns null when the route answers without a usable insight.
+  Future<HotelInsight?> hotelInsights({
+    required Map<String, dynamic> hotel,
     required DateTime start,
     required DateTime end,
     required int guests,
   }) async {
-    final roomRows = await client
-        .from('hotel_rooms')
-        .select()
-        .eq('hotel_id', hotelId)
-        .eq('status', 'active')
-        .gte('capacity', guests);
-    if (roomRows.isEmpty) return [];
-    final ids = roomRows.map((room) => room['id']).whereType<String>().toList();
-    final allRates = await client
-        .from('hotel_rates')
-        .select()
-        .inFilter('room_id', ids)
-        .order('date', ascending: false);
-    return roomRows.map((room) {
-      final roomRates = allRates
-          .where((rate) => '${rate['room_id']}' == '${room['id']}')
-          .toList();
-      final selectedRates = roomRates.where((rate) {
-        final value = DateTime.tryParse('${rate['date']}');
-        return value != null && !value.isBefore(start) && value.isBefore(end);
-      }).toList();
-      final usable = selectedRates.isNotEmpty ? selectedRates : roomRates;
-      usable.sort(
-        (a, b) => ((a['price_cents'] as num?)?.toInt() ?? 0).compareTo(
-          (b['price_cents'] as num?)?.toInt() ?? 0,
-        ),
-      );
-      return <String, dynamic>{
-        ...room,
-        '_rate': usable.isEmpty ? null : usable.first,
-        '_usedFallbackRate': selectedRates.isEmpty,
-      };
-    }).toList();
+    if (apiBaseUrl.isEmpty) {
+      throw StateError('Thiếu APP_API_BASE_URL');
+    }
+    final response = await http
+        .post(
+          Uri.parse('$apiBaseUrl/api/hotels/insights'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'hotel': {
+              'id': hotel['id'],
+              'name': hotel['name'],
+              'description': hotel['description'],
+              'star_rating': hotel['star_rating'],
+              'amenities': hotel['amenities'],
+              'address': hotel['address'],
+              'best_price': hotel['best_price'],
+            },
+            'checkIn': day(start),
+            'checkOut': day(end),
+            'guests': guests,
+          }),
+        )
+        .timeout(const Duration(seconds: 60));
+    if (response.statusCode >= 400) {
+      throw StateError('Insights API ${response.statusCode}');
+    }
+    return HotelInsight.fromResponse(jsonDecode(response.body));
   }
 
-  Future<Map<String, dynamic>> createBooking(Map<String, dynamic> payload) =>
-      client.from('hotel_bookings').insert(payload).select().single();
+  /// Inserts a pending booking request under the current user's session and
+  /// returns the stored row. Success requires a real backend id.
+  Future<Map<String, dynamic>> createBooking(
+    Map<String, dynamic> payload,
+  ) async {
+    final user = auth.currentUser;
+    if (user == null || payload['user_uuid'] != user.id) {
+      throw const AuthException('Vui lòng đăng nhập để đặt phòng');
+    }
+    final row = await client
+        .from('hotel_bookings')
+        .insert(payload)
+        .select(
+          'id,confirmation_code,status,payment_status,total_cents,currency',
+        )
+        .single();
+    final id = row['id'];
+    if (id == null || '$id'.isEmpty) {
+      throw StateError('Backend không trả về mã đơn');
+    }
+    return row;
+  }
 
   Future<List<Map<String, dynamic>>> bookingsFor(String userId) => client
       .from('hotel_bookings')
@@ -171,11 +271,7 @@ class HotelService {
   Future<Map<String, dynamic>?> currentProfile() async {
     final user = auth.currentUser;
     if (user == null) return null;
-    return client
-        .from('users')
-        .select()
-        .eq('id', user.id)
-        .maybeSingle();
+    return client.from('users').select().eq('id', user.id).maybeSingle();
   }
 
   /// Updates supported profile fields (name, bio, city, country, phone_number).
@@ -184,7 +280,7 @@ class HotelService {
   ) async {
     final user = auth.currentUser;
     if (user == null) throw const AuthException('Vui lòng đăng nhập');
-    
+
     // Only allow supported and verified profile fields
     const allowedFields = {'name', 'bio', 'city', 'country', 'phone_number'};
     final safeValues = <String, dynamic>{

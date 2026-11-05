@@ -2,6 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/hotel_insight.dart';
+import '../models/hotel_review.dart';
+import '../models/room_quote.dart';
 import '../screens/auth_screen.dart';
 import '../services/hotel_service.dart';
 
@@ -153,18 +156,11 @@ class HotelState extends ChangeNotifier {
   }
 
   /// Navigates to auth screen if user is not logged in and returns whether logged in.
-  Future<bool> requireAuth(
-    BuildContext context, {
-    String? reason,
-  }) async {
+  Future<bool> requireAuth(BuildContext context, {String? reason}) async {
     if (isAuthenticated) return true;
     final result = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
-        builder: (_) => AuthScreen(
-          reasonMessage: reason,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => AuthScreen(reasonMessage: reason)),
     );
     return result == true && isAuthenticated;
   }
@@ -182,6 +178,7 @@ class HotelState extends ChangeNotifier {
 
   void updateGuests(int value) {
     guests = value;
+    _dropStaleSelection();
     notifyListeners();
   }
 
@@ -189,13 +186,73 @@ class HotelState extends ChangeNotifier {
     if (adults != null) guests = adults.clamp(1, 10);
     if (childGuests != null) children = childGuests.clamp(0, 10);
     if (roomCount != null) rooms = roomCount.clamp(1, 4);
+    _dropStaleSelection();
     notifyListeners();
   }
 
   void updateDates(DateTimeRange value) {
     start = DateUtils.dateOnly(value.start);
     end = DateUtils.dateOnly(value.end);
+    _dropStaleSelection();
     notifyListeners();
+  }
+
+  /// Total people in the party (adults + children).
+  int get totalGuests => guests + children;
+
+  // ---- Selected hotel / room / quote (Epic 3-4) ---------------------------
+
+  Map<String, dynamic>? selectedHotel;
+  RoomQuote? selectedQuote;
+
+  /// Confirmation code reused across retries of the same request so a lost
+  /// response cannot silently create a second booking (unique constraint).
+  String? pendingConfirmationCode;
+
+  bool isSelectedRoom(String hotelId, String roomId) =>
+      '${selectedHotel?['id']}' == hotelId && selectedQuote?.roomId == roomId;
+
+  /// True when the selected quote was computed for the current stay.
+  bool get selectedQuoteIsCurrent {
+    final quote = selectedQuote;
+    return quote != null &&
+        quote.matches(
+          start: DateUtils.dateOnly(start),
+          end: DateUtils.dateOnly(end),
+          roomCount: rooms,
+          guestCount: totalGuests,
+        );
+  }
+
+  void selectRoom(Map<String, dynamic> hotel, RoomQuote quote) {
+    final changed =
+        '${selectedHotel?['id']}' != '${hotel['id']}' ||
+        selectedQuote?.roomId != quote.roomId;
+    selectedHotel = hotel;
+    selectedQuote = quote;
+    if (changed) pendingConfirmationCode = null;
+    notifyListeners();
+  }
+
+  void clearRoomSelection() {
+    selectedHotel = null;
+    selectedQuote = null;
+    pendingConfirmationCode = null;
+    notifyListeners();
+  }
+
+  void _dropStaleSelection() {
+    if (selectedQuote != null && !selectedQuoteIsCurrent) {
+      selectedQuote = null;
+      pendingConfirmationCode = null;
+    }
+  }
+
+  /// Called after the backend returned a real booking id.
+  void completeBooking() {
+    selectedQuote = null;
+    pendingConfirmationCode = null;
+    clearGuestDraft();
   }
 
   Future<List<Map<String, dynamic>>> hotels() async {
@@ -236,11 +293,31 @@ class HotelState extends ChangeNotifier {
     return values;
   }
 
-  Future<List<Map<String, dynamic>>> roomsFor(String hotelId) =>
-      service.roomsFor(
-        hotelId: hotelId,
+  Future<List<RoomOption>> roomOptionsFor(Map<String, dynamic> hotel) =>
+      service.roomOptions(
+        hotel: hotel,
         start: DateUtils.dateOnly(start),
         end: DateUtils.dateOnly(end),
-        guests: guests + children,
+        guests: totalGuests,
+        rooms: rooms,
       );
+
+  Future<List<HotelReview>> reviewsFor(String hotelId) =>
+      service.reviewsFor(hotelId);
+
+  Future<HotelInsight?> insightsFor(Map<String, dynamic> hotel) =>
+      service.hotelInsights(
+        hotel: hotel,
+        start: DateUtils.dateOnly(start),
+        end: DateUtils.dateOnly(end),
+        guests: totalGuests,
+      );
+
+  Future<Map<String, dynamic>?> currentProfile() async {
+    if (!isAuthenticated) return null;
+    return service.currentProfile();
+  }
+
+  Future<Map<String, dynamic>> createBooking(Map<String, dynamic> payload) =>
+      service.createBooking(payload);
 }
