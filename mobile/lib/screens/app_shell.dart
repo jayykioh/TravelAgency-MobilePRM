@@ -66,7 +66,8 @@ class _AppShellState extends State<AppShell> {
 
   Future<void> _handlePaymentLink(Uri uri) async {
     final isCallback = (uri.scheme == 'io.supabase.tripc' &&
-            uri.host == 'payment-callback') ||
+            (uri.host == 'payment-callback' ||
+                uri.path.contains('payment-callback'))) ||
         (kIsWeb &&
             (uri.queryParameters.containsKey('token') ||
                 uri.queryParameters.containsKey('resultCode') ||

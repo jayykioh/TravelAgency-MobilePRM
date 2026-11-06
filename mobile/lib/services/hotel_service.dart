@@ -1,9 +1,9 @@
-import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/hotel_insight.dart';
 import '../models/hotel_review.dart';
@@ -325,6 +325,33 @@ class HotelService {
       }
     }
     cleanPayload['partner_id'] = validPartnerId;
+
+    // 3. Ensure discount_cents, working_pass_discount_cents and enforce valid_pricing constraint
+    final discountCents = cleanPayload['discount_cents'] as int? ??
+        (cleanPayload['metadata'] is Map
+            ? (cleanPayload['metadata']['discount_cents'] as num?)?.toInt() ?? 0
+            : 0);
+    cleanPayload['discount_cents'] = discountCents;
+    cleanPayload['working_pass_discount_cents'] =
+        cleanPayload['working_pass_discount_cents'] as int? ?? 0;
+
+    // Enforce database constraint:
+    // valid_pricing CHECK (total_cents = nightly_rate_cents * nights_count + tax_cents + fees_cents - discount_cents - working_pass_discount_cents)
+    final nightlyRate = cleanPayload['nightly_rate_cents'] as int? ?? 0;
+    final inDate = DateTime.tryParse(cleanPayload['check_in_date']?.toString() ?? '');
+    final outDate = DateTime.tryParse(cleanPayload['check_out_date']?.toString() ?? '');
+    final nightsCount = (inDate != null && outDate != null)
+        ? max(1, outDate.difference(inDate).inDays)
+        : 1;
+    final taxCents = cleanPayload['tax_cents'] as int? ?? 0;
+    final feesCents = cleanPayload['fees_cents'] as int? ?? 0;
+    final workingPassDiscount = cleanPayload['working_pass_discount_cents'] as int? ?? 0;
+
+    cleanPayload['total_cents'] = (nightlyRate * nightsCount) +
+        taxCents +
+        feesCents -
+        discountCents -
+        workingPassDiscount;
 
     final row = await client
         .from('hotel_bookings')

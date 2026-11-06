@@ -1221,6 +1221,8 @@ class _BookingState extends State<BookingScreen> {
         'nightly_rate_cents': (subtotal / state.nights).round(),
         'tax_cents': tax,
         'fees_cents': fees,
+        'discount_cents': _voucherResult.isValid ? _voucherResult.discountCents : 0,
+        'working_pass_discount_cents': 0,
         'currency': currency,
         'status': 'pending',
         'payment_status': 'pending',

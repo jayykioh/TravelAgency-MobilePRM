@@ -115,6 +115,8 @@ Map<String, dynamic> buildBookingPayload({
     'nightly_rate_cents': quote.averageNightlyCents,
     'tax_cents': taxCents,
     'fees_cents': feesCents,
+    'discount_cents': discountCents,
+    'working_pass_discount_cents': 0,
     'currency': quote.currency,
     'status': 'pending',
     'payment_status': 'pending',

@@ -86,9 +86,16 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
   void _initDeepLinks() {
     try {
       _appLinks = AppLinks();
+      _appLinks?.getInitialLink().then((initialUri) {
+        if (initialUri != null && mounted) {
+          _handlePaymentDeepLink(initialUri);
+        }
+      });
       _linkSub = _appLinks?.uriLinkStream.listen(
         (uri) {
-          _handlePaymentDeepLink(uri);
+          if (mounted) {
+            _handlePaymentDeepLink(uri);
+          }
         },
         onError: (err) {
           debugPrint('PaymentBottomSheet deep link error: $err');
@@ -101,7 +108,8 @@ class _PaymentBottomSheetState extends State<PaymentBottomSheet> {
 
   void _handlePaymentDeepLink(Uri uri) {
     final isCallback = (uri.scheme == 'io.supabase.tripc' &&
-            uri.host == 'payment-callback') ||
+            (uri.host == 'payment-callback' ||
+                uri.path.contains('payment-callback'))) ||
         (kIsWeb &&
             (uri.queryParameters.containsKey('token') ||
                 uri.queryParameters.containsKey('resultCode') ||
