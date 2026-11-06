@@ -74,6 +74,11 @@ export default function MyBookingsPage() {
           const data = await res.json();
           if (data.ok && data.status === "success") {
             setIsSyncing(false);
+            if (searchParams.get("source") === "mobile") {
+              const bId = searchParams.get("bookingId") || "";
+              window.location.href = `io.supabase.tripc://payment-callback?status=success&provider=momo&bookingId=${bId}&orderId=${momoOrderId}`;
+              return;
+            }
             router.replace("/my-bookings?tab=booked&success=true");
           } else {
             toast.error("Thanh toán thất bại");
@@ -119,6 +124,11 @@ export default function MyBookingsPage() {
           const data = await res.json();
           if (data.ok) {
             setIsSyncing(false);
+            if (searchParams.get("source") === "mobile") {
+              const bId = searchParams.get("bookingId") || "";
+              window.location.href = `io.supabase.tripc://payment-callback?status=success&provider=paypal&bookingId=${bId}&token=${paypalToken}&PayerID=${paypalPayerId}`;
+              return;
+            }
             router.replace("/my-bookings?tab=booked&success=true");
           } else {
             toast.error("Lỗi xác minh PayPal");

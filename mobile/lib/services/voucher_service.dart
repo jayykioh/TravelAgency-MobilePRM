@@ -160,7 +160,7 @@ class VoucherService {
           .eq('is_purchasable', true)
           .order('tcent_price', ascending: true);
 
-      if (rows is List && rows.isNotEmpty) {
+      if (rows.isNotEmpty) {
         return rows
             .map((r) => VoucherModel.fromJson(Map<String, dynamic>.from(r)))
             .toList();
@@ -188,7 +188,7 @@ class VoucherService {
           .eq('status', 'AVAILABLE')
           .order('acquired_at', ascending: false);
 
-      if (rows is List && rows.isNotEmpty) {
+      if (rows.isNotEmpty) {
         final dbList = rows
             .map((r) => UserVoucherModel.fromJson(Map<String, dynamic>.from(r)))
             .toList();

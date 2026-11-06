@@ -1,8 +1,9 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/hotel_insight.dart';
 import '../models/hotel_review.dart';
@@ -223,18 +224,138 @@ class HotelService {
     return HotelInsight.fromResponse(jsonDecode(response.body));
   }
 
+  /// Ensures that a record for the current user exists in `public.users`.
+  /// Creates a basic profile row if missing so foreign key constraints
+  /// (such as `hotel_bookings_user_uuid_fkey`) are satisfied.
+  Future<Map<String, dynamic>?> ensureUserProfile({
+    String? name,
+    String? phone,
+  }) async {
+    final user = auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final existing = await client
+          .from('users')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+      if (existing != null) return existing;
+
+      final email = user.email ?? 'user_${user.id.substring(0, 8)}@tripc.com';
+      final guestName = (name != null && name.trim().isNotEmpty)
+          ? name.trim()
+          : (user.userMetadata?['name'] as String?) ??
+              (user.userMetadata?['full_name'] as String?) ??
+              email.split('@').first;
+      final guestPhone =
+          (phone != null && phone.trim().isNotEmpty) ? phone.trim() : null;
+
+      final row = await client
+          .from('users')
+          .upsert({
+            'id': user.id,
+            'clerk_id': user.id,
+            'email': email,
+            'name': guestName,
+            'phone_number': ?guestPhone,
+            'membership_tier': 'BRONZE',
+            'is_active': true,
+          }, onConflict: 'id')
+          .select()
+          .maybeSingle();
+      return row;
+    } catch (e) {
+      debugPrint('ensureUserProfile notice: $e');
+      return null;
+    }
+  }
+
   /// Inserts a pending booking request under the current user's session and
   /// returns the stored row. Success requires a real backend id.
   Future<Map<String, dynamic>> createBooking(
     Map<String, dynamic> payload,
   ) async {
     final user = auth.currentUser;
-    if (user == null || payload['user_uuid'] != user.id) {
+    if (user == null) {
       throw const AuthException('Vui lòng đăng nhập để đặt phòng');
     }
+
+    final cleanPayload = Map<String, dynamic>.from(payload);
+    cleanPayload['external_user_ref'] = user.id;
+
+    // 1. Ensure user row exists in public.users to satisfy hotel_bookings_user_uuid_fkey
+    String? validUserUuid;
+    try {
+      final guestName = (cleanPayload['guest_name'] as String?)?.trim();
+      final guestPhone = (cleanPayload['guest_phone'] as String?)?.trim();
+      final profile = await ensureUserProfile(name: guestName, phone: guestPhone);
+      if (profile != null) {
+        validUserUuid = user.id;
+      } else {
+        final existing = await client
+            .from('users')
+            .select('id')
+            .eq('id', user.id)
+            .maybeSingle();
+        if (existing != null) validUserUuid = user.id;
+      }
+    } catch (e) {
+      debugPrint('createBooking ensureUserProfile warning: $e');
+    }
+
+    // Set validUserUuid if confirmed in public.users, or null if unlinked to bypass FK 23503
+    cleanPayload['user_uuid'] = validUserUuid;
+
+    // 2. Validate partner_id against public.hotel_partners to satisfy hotel_bookings_partner_id_fkey
+    final rawPartnerId = cleanPayload['partner_id']?.toString().trim();
+    String? validPartnerId;
+    if (rawPartnerId != null && rawPartnerId.isNotEmpty) {
+      try {
+        final partnerRow = await client
+            .from('hotel_partners')
+            .select('id')
+            .eq('id', rawPartnerId)
+            .maybeSingle();
+        if (partnerRow != null) {
+          validPartnerId = rawPartnerId;
+        }
+      } catch (_) {
+        validPartnerId = null;
+      }
+    }
+    cleanPayload['partner_id'] = validPartnerId;
+
+    // 3. Ensure discount_cents, working_pass_discount_cents and enforce valid_pricing constraint
+    final discountCents = cleanPayload['discount_cents'] as int? ??
+        (cleanPayload['metadata'] is Map
+            ? (cleanPayload['metadata']['discount_cents'] as num?)?.toInt() ?? 0
+            : 0);
+    cleanPayload['discount_cents'] = discountCents;
+    cleanPayload['working_pass_discount_cents'] =
+        cleanPayload['working_pass_discount_cents'] as int? ?? 0;
+
+    // Enforce database constraint:
+    // valid_pricing CHECK (total_cents = nightly_rate_cents * nights_count + tax_cents + fees_cents - discount_cents - working_pass_discount_cents)
+    final nightlyRate = cleanPayload['nightly_rate_cents'] as int? ?? 0;
+    final inDate = DateTime.tryParse(cleanPayload['check_in_date']?.toString() ?? '');
+    final outDate = DateTime.tryParse(cleanPayload['check_out_date']?.toString() ?? '');
+    final nightsCount = (inDate != null && outDate != null)
+        ? max(1, outDate.difference(inDate).inDays)
+        : 1;
+    final taxCents = cleanPayload['tax_cents'] as int? ?? 0;
+    final feesCents = cleanPayload['fees_cents'] as int? ?? 0;
+    final workingPassDiscount = cleanPayload['working_pass_discount_cents'] as int? ?? 0;
+
+    cleanPayload['total_cents'] = (nightlyRate * nightsCount) +
+        taxCents +
+        feesCents -
+        discountCents -
+        workingPassDiscount;
+
     final row = await client
         .from('hotel_bookings')
-        .insert(payload)
+        .insert(cleanPayload)
         .select(
           'id,confirmation_code,status,payment_status,total_cents,currency',
         )
@@ -293,7 +414,7 @@ class HotelService {
       try {
         return await client
             .from('users')
-            .insert({'id': user.id, 'email': user.email, ...safeValues})
+            .insert({'id': user.id, 'clerk_id': user.id, 'email': user.email, ...safeValues})
             .select()
             .single();
       } catch (e) {

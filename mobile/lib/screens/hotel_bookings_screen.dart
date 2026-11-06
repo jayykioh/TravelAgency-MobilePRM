@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/hotel_state.dart';
 import '../widgets/hotel_image.dart';
+import '../widgets/payment_bottom_sheet.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -113,8 +114,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       '${b['hotels']?['name'] ?? 'Khách sạn'}',
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                    subtitle: Text(
-                      '${b['check_in_date']} → ${b['check_out_date']}\n${b['status']} · ${((b['total_cents'] as num?) ?? 0) / 100} ${b['currency']}',
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${b['check_in_date']} → ${b['check_out_date']}\n${b['status']} · ${((b['total_cents'] as num?) ?? 0) / 100} ${b['currency']}',
+                        ),
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: b['payment_status'] == 'paid'
+                                ? const Color(0xFFDCFCE7)
+                                : const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            b['payment_status'] == 'paid'
+                                ? '✓ Đã thanh toán'
+                                : 'Chưa thanh toán (MoMo/PayPal)',
+                            style: TextStyle(
+                              color: b['payment_status'] == 'paid'
+                                  ? const Color(0xFF16A34A)
+                                  : const Color(0xFFD97706),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     isThreeLine: true,
                     onTap: () => showDialog<void>(
@@ -122,9 +150,31 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       builder: (c) => AlertDialog(
                         title: Text('${b['hotels']?['name'] ?? 'Khách sạn'}'),
                         content: Text(
-                          'Mã: ${b['confirmation_code']}\nPhòng: ${b['hotel_rooms']?['title'] ?? ''}\nNgày: ${b['check_in_date']} → ${b['check_out_date']}\nKhách: ${b['guest_name']} · ${b['guest_email']} · ${b['guest_phone']}\nTổng: ${((b['total_cents'] as num?) ?? 0) / 100} ${b['currency']}\nTrạng thái: ${b['status']}\nThanh toán: ${b['payment_status']}',
+                          'Mã: ${b['confirmation_code']}\nPhòng: ${b['hotel_rooms']?['title'] ?? ''}\nNgày: ${b['check_in_date']} → ${b['check_out_date']}\nKhách: ${b['guest_name']} · ${b['guest_email']} · ${b['guest_phone']}\nTổng: ${((b['total_cents'] as num?) ?? 0) / 100} ${b['currency']}\nTrạng thái: ${b['status']}\nThanh toán: ${b['payment_status'] == 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}',
                         ),
                         actions: [
+                          if (b['payment_status'] != 'paid' && b['status'] != 'cancelled')
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFA50064),
+                              ),
+                              onPressed: () async {
+                                Navigator.pop(c);
+                                final paid = await PaymentBottomSheet.show(
+                                  context,
+                                  bookingId: '${b['id']}',
+                                  confirmationCode: '${b['confirmation_code'] ?? 'HTL'}',
+                                  totalAmountUsd: (((b['total_cents'] as num?) ?? 0) / 100).toDouble(),
+                                  hotelName: '${b['hotels']?['name'] ?? 'Khách sạn'}',
+                                  roomTitle: '${b['hotel_rooms']?['title'] ?? 'Phòng'}',
+                                  currency: '${b['currency'] ?? 'USD'}',
+                                );
+                                if (paid == true && mounted) {
+                                  setState(() {});
+                                }
+                              },
+                              child: const Text('Thanh toán ngay'),
+                            ),
                           if (b['status'] == 'pending')
                             TextButton(
                               onPressed: () async {

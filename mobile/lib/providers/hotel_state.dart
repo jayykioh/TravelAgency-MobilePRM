@@ -25,6 +25,9 @@ class HotelState extends ChangeNotifier {
   void _initAuthListener() {
     try {
       _authSubscription = service.auth.onAuthStateChange.listen((data) {
+        if (data.session != null) {
+          service.ensureUserProfile();
+        }
         notifyListeners();
       });
     } catch (_) {

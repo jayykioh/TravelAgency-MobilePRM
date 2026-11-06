@@ -96,7 +96,9 @@ Map<String, dynamic> buildBookingPayload({
     'external_user_ref': userId,
     'hotel_id': hotel['id'],
     'room_id': quote.room['id'],
-    'partner_id': quote.partnerId,
+    'partner_id': (quote.source.isReference || quote.partnerId == null || quote.partnerId!.trim().isEmpty)
+        ? null
+        : quote.partnerId!.trim(),
     'confirmation_code': confirmationCode,
     'check_in_date': isoDay(quote.start),
     'check_out_date': isoDay(quote.end),
@@ -113,6 +115,8 @@ Map<String, dynamic> buildBookingPayload({
     'nightly_rate_cents': quote.averageNightlyCents,
     'tax_cents': taxCents,
     'fees_cents': feesCents,
+    'discount_cents': discountCents,
+    'working_pass_discount_cents': 0,
     'currency': quote.currency,
     'status': 'pending',
     'payment_status': 'pending',

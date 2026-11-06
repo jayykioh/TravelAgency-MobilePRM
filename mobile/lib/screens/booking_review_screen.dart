@@ -5,6 +5,7 @@ import '../models/booking_request.dart';
 import '../models/room_quote.dart';
 import '../providers/hotel_state.dart';
 import '../utils/hotel_format.dart';
+import '../widgets/payment_bottom_sheet.dart';
 import 'hotel_bookings_screen.dart';
 import 'hotel_checkout_screen.dart';
 
@@ -81,6 +82,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         (route) => route.isFirst,
       );
     } catch (e) {
+      debugPrint('Booking submission failed: $e');
       if (mounted) setState(() => error = describeBookingError(e));
     } finally {
       if (mounted) setState(() => busy = false);
@@ -281,7 +283,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
 }
 
 /// Shown only after the backend returned a real booking id.
-class BookingResultScreen extends StatelessWidget {
+class BookingResultScreen extends StatefulWidget {
   const BookingResultScreen({
     super.key,
     required this.booking,
@@ -295,52 +297,83 @@ class BookingResultScreen extends StatelessWidget {
   final RoomQuote quote;
 
   @override
+  State<BookingResultScreen> createState() => _BookingResultScreenState();
+}
+
+class _BookingResultScreenState extends State<BookingResultScreen> {
+  late bool isPaid;
+
+  @override
+  void initState() {
+    super.initState();
+    isPaid = widget.booking['payment_status'] == 'paid';
+  }
+
+  @override
   Widget build(BuildContext context) {
     final total =
-        (booking['total_cents'] as num?)?.toInt() ?? quote.breakdown.totalCents;
-    final currency = '${booking['currency'] ?? quote.currency}';
+        (widget.booking['total_cents'] as num?)?.toInt() ?? widget.quote.breakdown.totalCents;
+    final currency = '${widget.booking['currency'] ?? widget.quote.currency}';
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: const Text('Đã gửi yêu cầu'),
+        title: Text(isPaid ? 'Đặt phòng thành công' : 'Đã gửi yêu cầu'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Icon(Icons.hourglass_top_rounded, size: 72, color: _brand),
+          Icon(
+            isPaid ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
+            size: 72,
+            color: isPaid ? const Color(0xFF16A34A) : _brand,
+          ),
           const SizedBox(height: 12),
-          const Text(
-            'Yêu cầu đặt phòng đã được ghi nhận',
+          Text(
+            isPaid
+                ? 'Đã thanh toán & xác nhận đặt phòng'
+                : 'Yêu cầu đặt phòng đã được ghi nhận',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Khách sạn sẽ xác nhận sau. Đơn chưa được thanh toán.',
+          Text(
+            isPaid
+                ? 'Đơn phòng của bạn đã được thanh toán thành công và sẵn sàng đón tiếp!'
+                : 'Khách sạn sẽ xác nhận sau. Bạn có thể thanh toán ngay qua MoMo hoặc PayPal.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: _muted),
+            style: const TextStyle(color: _muted),
           ),
           const SizedBox(height: 24),
           _Card(
-            title: hotelName,
+            title: widget.hotelName,
             children: [
-              Text(roomTitle),
+              Text(widget.roomTitle),
               Text(
-                '${formatDay(quote.start)} → ${formatDay(quote.end)} · ${quote.nightCount} đêm',
+                '${formatDay(widget.quote.start)} → ${formatDay(widget.quote.end)} · ${widget.quote.nightCount} đêm',
               ),
               const Divider(),
               _PriceLine(
                 label: 'Mã xác nhận',
-                value: '${booking['confirmation_code'] ?? '—'}',
+                value: '${widget.booking['confirmation_code'] ?? '—'}',
                 strong: true,
               ),
               _PriceLine(
                 label: 'Mã đơn',
-                value: '${booking['id']}',
+                value: '${widget.booking['id']}',
                 muted: true,
               ),
-              const _PriceLine(label: 'Trạng thái', value: 'Chờ xác nhận'),
-              const _PriceLine(label: 'Thanh toán', value: 'Chưa thanh toán'),
+              _PriceLine(
+                label: 'Trạng thái',
+                value: isPaid ? 'Đã xác nhận' : 'Chờ xác nhận',
+                color: isPaid ? const Color(0xFF16A34A) : null,
+                strong: isPaid,
+              ),
+              _PriceLine(
+                label: 'Thanh toán',
+                value: isPaid ? 'Đã thanh toán' : 'Chưa thanh toán',
+                color: isPaid ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                strong: true,
+              ),
               _PriceLine(
                 label: 'Tổng cộng',
                 value: formatMoney(total, currency),
@@ -349,15 +382,58 @@ class BookingResultScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
+          if (!isPaid) ...[
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFA50064),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                icon: const Icon(Icons.payment_rounded, color: Colors.white),
+                label: const Text(
+                  'Thanh toán ngay (MoMo / PayPal)',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+                onPressed: () async {
+                  final paid = await PaymentBottomSheet.show(
+                    context,
+                    bookingId: '${widget.booking['id']}',
+                    confirmationCode:
+                        '${widget.booking['confirmation_code'] ?? 'HTL'}',
+                    totalAmountUsd: total / 100.0,
+                    hotelName: widget.hotelName,
+                    roomTitle: widget.roomTitle,
+                    currency: currency,
+                  );
+                  if (paid == true && mounted) {
+                    setState(() => isPaid = true);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           SizedBox(
             height: 52,
-            child: FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: _brand),
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _brand,
+                side: const BorderSide(color: _brand),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
               onPressed: () => Navigator.pushReplacement(
                 context,
                 MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
               ),
-              child: const Text('Xem đơn của tôi'),
+              child: const Text(
+                'Xem đơn của tôi',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ),
           const SizedBox(height: 8),
