@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment_intent.dart';
+import '../utils/currency.dart' as shared;
+import '../utils/currency.dart' show minorUnitsToUsd;
 
 /// Service handling checkout payment integration with MoMo & PayPal gateways.
 class PaymentService {
@@ -18,7 +20,7 @@ class PaymentService {
   final http.Client _http;
   final String _baseUrl;
 
-  static const double usdToVndRate = 25400.0;
+  static const double usdToVndRate = shared.usdToVndRate;
 
   /// Converts USD to VND equivalent.
   static int convertUsdToVnd(double usd) => (usd * usdToVndRate).round();
@@ -54,7 +56,11 @@ class PaymentService {
           .eq('id', bookingId)
           .maybeSingle();
       if (b != null && b['total_cents'] != null) {
-        effectiveAmountUsd = ((b['total_cents'] as num) / 100).toDouble();
+        effectiveAmountUsd = minorUnitsToUsd(
+              (b['total_cents'] as num).toInt(),
+              '${b['currency'] ?? 'USD'}',
+            ) ??
+            effectiveAmountUsd;
       }
     } catch (_) {}
 
@@ -565,8 +571,10 @@ class PaymentService {
           .maybeSingle();
 
       if (hb != null) {
-        final totalCents = (hb['total_cents'] as num?)?.toDouble() ?? 10000;
-        final amountUsd = totalCents / 100.0;
+        final totalCents = (hb['total_cents'] as num?)?.toInt() ?? 10000;
+        final amountUsd =
+            minorUnitsToUsd(totalCents, '${hb['currency'] ?? 'USD'}') ??
+            totalCents / 100.0;
         final hotelName = hb['hotels']?['name'] ?? 'Hotel Booking';
 
         await client.from('bookings').insert({

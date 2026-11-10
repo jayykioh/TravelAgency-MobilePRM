@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/hotel_state.dart';
 import '../widgets/hotel_image.dart';
+import '../utils/currency.dart';
 import '../widgets/payment_bottom_sheet.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -122,7 +123,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                         const SizedBox(height: 4),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: b['payment_status'] == 'paid'
                                 ? const Color(0xFFDCFCE7)
@@ -153,7 +157,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           'Mã: ${b['confirmation_code']}\nPhòng: ${b['hotel_rooms']?['title'] ?? ''}\nNgày: ${b['check_in_date']} → ${b['check_out_date']}\nKhách: ${b['guest_name']} · ${b['guest_email']} · ${b['guest_phone']}\nTổng: ${((b['total_cents'] as num?) ?? 0) / 100} ${b['currency']}\nTrạng thái: ${b['status']}\nThanh toán: ${b['payment_status'] == 'paid' ? 'Đã thanh toán' : 'Chưa thanh toán'}',
                         ),
                         actions: [
-                          if (b['payment_status'] != 'paid' && b['status'] != 'cancelled')
+                          if (b['payment_status'] != 'paid' &&
+                              b['status'] != 'cancelled')
                             FilledButton(
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFFA50064),
@@ -163,10 +168,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 final paid = await PaymentBottomSheet.show(
                                   context,
                                   bookingId: '${b['id']}',
-                                  confirmationCode: '${b['confirmation_code'] ?? 'HTL'}',
-                                  totalAmountUsd: (((b['total_cents'] as num?) ?? 0) / 100).toDouble(),
-                                  hotelName: '${b['hotels']?['name'] ?? 'Khách sạn'}',
-                                  roomTitle: '${b['hotel_rooms']?['title'] ?? 'Phòng'}',
+                                  confirmationCode:
+                                      '${b['confirmation_code'] ?? 'HTL'}',
+                                  totalAmountUsd:
+                                      minorUnitsToUsd(
+                                        ((b['total_cents'] as num?) ?? 0)
+                                            .toInt(),
+                                        '${b['currency'] ?? 'USD'}',
+                                      ) ??
+                                      0,
+                                  hotelName:
+                                      '${b['hotels']?['name'] ?? 'Khách sạn'}',
+                                  roomTitle:
+                                      '${b['hotel_rooms']?['title'] ?? 'Phòng'}',
                                   currency: '${b['currency'] ?? 'USD'}',
                                 );
                                 if (paid == true && mounted) {

@@ -59,9 +59,9 @@ void main() {
     });
 
     test('USD and VND conversion utilities', () {
-      expect(PaymentService.convertUsdToVnd(10.0), 254000);
-      expect(PaymentService.convertUsdToVnd(92.0), 2336800);
-      expect(PaymentService.convertVndToUsd(254000.0), 10.0);
+      expect(PaymentService.convertUsdToVnd(10.0), 254500);
+      expect(PaymentService.convertUsdToVnd(92.0), 2341400);
+      expect(PaymentService.convertVndToUsd(254500.0), 10.0);
     });
   });
 
@@ -194,7 +194,7 @@ void main() {
       expect(find.text('Phương thức thanh toán'), findsOneWidget);
       expect(find.text('Ví điện tử MoMo'), findsOneWidget);
       expect(find.text('PayPal'), findsOneWidget);
-      expect(find.textContaining('2.336.800 đ'), findsOneWidget);
+      expect(find.textContaining('2.341.400 đ'), findsOneWidget);
       expect(find.textContaining('\$92.00 USD'), findsOneWidget);
 
       // Tap PayPal

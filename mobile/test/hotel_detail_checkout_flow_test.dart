@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/models/hotel_insight.dart';
 import 'package:mobile/models/hotel_review.dart';
+import 'package:mobile/models/online_payment.dart';
 import 'package:mobile/models/room_quote.dart';
 import 'package:mobile/providers/hotel_state.dart';
 import 'package:mobile/screens/booking_review_screen.dart';
 import 'package:mobile/screens/hotel_detail_screen.dart';
+import 'package:mobile/screens/online_payment_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -24,9 +26,18 @@ const hotel = <String, dynamic>{
 };
 
 class FakeFlowState extends HotelState {
-  FakeFlowState({this.signedIn = true, this.createError});
+  FakeFlowState({
+    this.signedIn = true,
+    this.createError,
+    this.payments = false,
+  });
 
   bool signedIn;
+  bool payments;
+  int paymentCalls = 0;
+  int statusCalls = 0;
+  bool paidOnServer = false;
+  PaymentProvider? lastProvider;
   Object? createError;
   Map<String, dynamic>? lastPayload;
   int createCalls = 0;
@@ -86,6 +97,45 @@ class FakeFlowState extends HotelState {
 
   @override
   Future<Map<String, dynamic>?> currentProfile() async => null;
+
+  @override
+  bool get paymentsAvailable => payments;
+
+  OnlinePayment _payment(String code, {required bool paid, bool url = true}) =>
+      OnlinePayment.fromJson({
+        'id': 'booking-pay-1',
+        'confirmation_code': code,
+        'status': paid ? 'confirmed' : 'pending',
+        'payment_status': paid ? 'paid' : 'pending',
+        'total_cents': 46000,
+        'currency': 'USD',
+        'payment': {
+          'provider': 'momo',
+          'payment_url': url ? 'https://test-payment.momo.vn/pay/abc' : null,
+          'amount': 10000,
+          'currency': 'VND',
+          'test_mode': true,
+          'status': paid ? 'paid' : 'pending',
+        },
+      });
+
+  @override
+  Future<OnlinePayment> createOnlinePayment(
+    Map<String, dynamic> payload,
+    PaymentProvider provider,
+  ) async {
+    paymentCalls++;
+    lastPayload = payload;
+    lastProvider = provider;
+    if (createError != null) throw createError!;
+    return _payment('${payload['confirmation_code']}', paid: false);
+  }
+
+  @override
+  Future<OnlinePayment> paymentStatus(String bookingId) async {
+    statusCalls++;
+    return _payment('ABCDEFGH', paid: paidOnServer, url: false);
+  }
 
   @override
   Future<Map<String, dynamic>> createBooking(
@@ -278,5 +328,44 @@ void main() {
     expect(state.createCalls, 2);
     expect(state.lastPayload!['confirmation_code'], code);
     expect(state.draftGuestName, 'Lan Anh');
+  });
+
+  testWidgets('MoMo checkout creates booking on server and confirms payment', (
+    tester,
+  ) async {
+    state.payments = true;
+    await pumpDetail(tester, state);
+    await selectSuiteAndReserve(tester);
+    await fillGuestForm(tester);
+    await tapContinue(tester);
+
+    final pay = find.byKey(const ValueKey('pay-momo'));
+    await scrollTo(tester, pay);
+    expect(find.byKey(const ValueKey('pay-paypal')), findsOneWidget);
+    expect(find.text('Chỉ gửi yêu cầu (thanh toán sau)'), findsOneWidget);
+    await tester.tap(pay);
+    await tester.pumpAndSettle();
+
+    // Booking goes through the server route, not the RLS-blocked insert.
+    expect(state.paymentCalls, 1);
+    expect(state.createCalls, 0);
+    expect(state.lastProvider, PaymentProvider.momo);
+    expect(state.lastPayload!['user_uuid'], 'auth-user-1');
+    expect(find.byType(OnlinePaymentScreen), findsOneWidget);
+    expect(find.text('Đang chờ thanh toán'), findsOneWidget);
+    expect(state.selectedQuote, isNull);
+
+    final refresh = find.byKey(const ValueKey('payment-refresh'));
+    await scrollTo(tester, refresh);
+    await tester.tap(refresh);
+    await tester.pumpAndSettle();
+    expect(state.statusCalls, 1);
+    expect(find.byKey(const ValueKey('payment-message')), findsOneWidget);
+
+    state.paidOnServer = true;
+    await scrollTo(tester, refresh);
+    await tester.tap(refresh);
+    await tester.pumpAndSettle();
+    expect(find.text('Thanh toán thành công'), findsOneWidget);
   });
 }

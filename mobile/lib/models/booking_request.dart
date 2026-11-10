@@ -83,20 +83,27 @@ Map<String, dynamic> buildBookingPayload({
   if (userId.isEmpty) {
     throw ArgumentError('An authenticated user id is required');
   }
-  final price = quote.breakdown;
+  final price = quote.breakdownWithDiscount(guest.discountCents);
   final requests = guest.specialRequests.trim();
   final voucher = guest.voucherCode.trim().toUpperCase();
-  final discountCents = guest.discountCents;
-  final discountedSubtotal = max(0, price.subtotalCents - discountCents);
-  final taxCents = discountCents > 0 ? (discountedSubtotal * 0.10).round() : price.taxCents;
-  final feesCents = discountCents > 0 ? (discountedSubtotal * 0.05).round() : price.feeCents;
-  final totalCents = discountCents > 0 ? (discountedSubtotal + taxCents + feesCents) : price.totalCents;
+  final discountCents = price.discountCents;
+  // The live `hotel_bookings` pricing check is
+  // total = nightly_rate_cents * nights + tax + fees - discount, so the
+  // nightly rate covers every room. Any rounding remainder from averaging
+  // goes into the fee so the stored total equals the total shown to the user.
+  final nights = max(1, quote.nightCount);
+  final nightlyRateCents = (price.subtotalCents / nights).round();
+  final feesCents =
+      price.feeCents + (price.subtotalCents - nightlyRateCents * nights);
   return {
     'user_uuid': userId,
     'external_user_ref': userId,
     'hotel_id': hotel['id'],
     'room_id': quote.room['id'],
-    'partner_id': (quote.source.isReference || quote.partnerId == null || quote.partnerId!.trim().isEmpty)
+    'partner_id':
+        (quote.source.isReference ||
+            quote.partnerId == null ||
+            quote.partnerId!.trim().isEmpty)
         ? null
         : quote.partnerId!.trim(),
     'confirmation_code': confirmationCode,
@@ -111,9 +118,9 @@ Map<String, dynamic> buildBookingPayload({
       'rooms': quote.roomCount,
     },
     'special_requests': requests.isEmpty ? null : requests,
-    'total_cents': totalCents,
-    'nightly_rate_cents': quote.averageNightlyCents,
-    'tax_cents': taxCents,
+    'total_cents': price.totalCents,
+    'nightly_rate_cents': nightlyRateCents,
+    'tax_cents': price.taxCents,
     'fees_cents': feesCents,
     'discount_cents': discountCents,
     'working_pass_discount_cents': 0,

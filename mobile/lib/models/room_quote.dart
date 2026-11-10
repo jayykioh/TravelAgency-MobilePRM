@@ -32,27 +32,42 @@ class NightRate {
 
 /// Price rules mirrored from the existing web hotel checkout
 /// (`BookingSidebar.tsx`, `checkout.service.ts`): 10% tax and 5% service fee
-/// on the room total. Amounts are integer cents.
+/// on the room total. A voucher discount is taken off the room total before
+/// tax and fee are applied. Amounts are integer cents.
 class PriceBreakdown {
   const PriceBreakdown({
     required this.subtotalCents,
     required this.taxCents,
     required this.feeCents,
+    this.discountCents = 0,
   });
 
-  factory PriceBreakdown.fromSubtotal(int subtotalCents) => PriceBreakdown(
-    subtotalCents: subtotalCents,
-    taxCents: (subtotalCents * taxRate).round(),
-    feeCents: (subtotalCents * serviceFeeRate).round(),
-  );
+  /// [discountCents] is clamped to `0..subtotalCents`.
+  factory PriceBreakdown.fromSubtotal(
+    int subtotalCents, {
+    int discountCents = 0,
+  }) {
+    final discount = discountCents.clamp(0, subtotalCents);
+    final taxable = subtotalCents - discount;
+    return PriceBreakdown(
+      subtotalCents: subtotalCents,
+      discountCents: discount,
+      taxCents: (taxable * taxRate).round(),
+      feeCents: (taxable * serviceFeeRate).round(),
+    );
+  }
 
   static const taxRate = 0.10;
   static const serviceFeeRate = 0.05;
 
   final int subtotalCents;
+  final int discountCents;
   final int taxCents;
   final int feeCents;
-  int get totalCents => subtotalCents + taxCents + feeCents;
+
+  /// Room total after the voucher discount (the base for tax and fee).
+  int get discountedSubtotalCents => subtotalCents - discountCents;
+  int get totalCents => discountedSubtotalCents + taxCents + feeCents;
 }
 
 /// A priced room for a specific stay (dates + room count + guests).
@@ -97,6 +112,10 @@ class RoomQuote {
       nights.isEmpty ? 0 : (stayCentsPerRoom / nights.length).round();
 
   PriceBreakdown get breakdown => PriceBreakdown.fromSubtotal(subtotalCents);
+
+  /// [breakdown] with a voucher discount (minor units of [currency]).
+  PriceBreakdown breakdownWithDiscount(int discountCents) =>
+      PriceBreakdown.fromSubtotal(subtotalCents, discountCents: discountCents);
 
   bool? get breakfastIncluded =>
       rate == null ? null : rate!['breakfast_included'] == true;

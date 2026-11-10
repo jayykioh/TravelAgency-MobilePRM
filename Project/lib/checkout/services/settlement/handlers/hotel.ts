@@ -19,6 +19,20 @@ export class HotelSettlementHandler implements ISettlementHandler {
       .maybeSingle(); // Changed from single() to maybeSingle()
 
     if (existing) {
+      // Mobile creates hotel_bookings up front (pending) and links it via
+      // booking_id; settlement only runs after a successful payment, so mark
+      // that row paid. No-op for rows that are already paid.
+      const now = new Date().toISOString();
+      await this.supabase
+        .from("hotel_bookings")
+        .update({ payment_status: "paid", updated_at: now })
+        .eq("id", existing.id)
+        .eq("payment_status", "pending");
+      await this.supabase
+        .from("hotel_bookings")
+        .update({ status: "confirmed", confirmed_at: now, updated_at: now })
+        .eq("id", existing.id)
+        .eq("status", "pending");
       console.log("[HOTEL_SETTLEMENT] Idempotent: Already processed");
       return;
     }
