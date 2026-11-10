@@ -215,6 +215,8 @@ class VoucherValidationResult {
     required this.isValid,
     this.code = '',
     this.discountUsd = 0.0,
+    this.discountCents = 0,
+    this.currency = 'USD',
     this.message,
     this.errorMessage,
     this.voucher,
@@ -222,12 +224,17 @@ class VoucherValidationResult {
 
   final bool isValid;
   final String code;
+
+  /// Voucher face value actually granted, in USD (vouchers are USD-based).
   final double discountUsd;
+
+  /// [discountUsd] converted to minor units of [currency] (the booking's
+  /// currency), already capped at the room total.
+  final int discountCents;
+  final String currency;
   final String? message;
   final String? errorMessage;
   final VoucherModel? voucher;
-
-  int get discountCents => (discountUsd * 100).round();
 
   static const none = VoucherValidationResult(isValid: false);
 }

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/hotel_insight.dart';
 import '../models/hotel_review.dart';
+import '../models/online_payment.dart';
 import '../models/room_quote.dart';
 import '../screens/auth_screen.dart';
 import '../services/hotel_service.dart';
@@ -323,4 +324,14 @@ class HotelState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> createBooking(Map<String, dynamic> payload) =>
       service.createBooking(payload);
+
+  bool get paymentsAvailable => service.paymentsAvailable;
+
+  Future<OnlinePayment> createOnlinePayment(
+    Map<String, dynamic> payload,
+    PaymentProvider provider,
+  ) => service.createOnlinePayment(payload, provider);
+
+  Future<OnlinePayment> paymentStatus(String bookingId) =>
+      service.paymentStatus(bookingId);
 }

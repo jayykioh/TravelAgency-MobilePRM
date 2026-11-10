@@ -3,9 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/models/voucher.dart';
 import 'package:mobile/providers/hotel_state.dart';
 import 'package:mobile/screens/rewards_vouchers_screen.dart';
-import 'package:mobile/screens/hotel_checkout_screen.dart';
 import 'package:mobile/services/hotel_service.dart';
 import 'package:mobile/services/voucher_service.dart';
+import 'package:mobile/utils/currency.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -126,7 +126,8 @@ void main() {
       final statusBefore = await service.getTcentStatus(userId);
       final initialBalance = statusBefore.tcentBalance;
 
-      final voucherToBuy = VoucherService.defaultVouchers.first; // HOTEL20, 2000 TC
+      final voucherToBuy =
+          VoucherService.defaultVouchers.first; // HOTEL20, 2000 TC
       final newBalance = await service.redeemVoucher(
         userId: userId,
         voucher: voucherToBuy,
@@ -144,37 +145,141 @@ void main() {
       );
     });
 
-    test('validateVoucher calculates correct discount for SHOP10 and HOTEL20', () async {
-      // SHOP10 on $90 booking
-      final resShop10 = await service.validateVoucher(
-        code: 'SHOP10',
-        cartTotalUsd: 90.0,
-      );
-      expect(resShop10.isValid, isTrue);
-      expect(resShop10.discountUsd, 10.0);
-      expect(resShop10.discountCents, 1000);
-
-      // HOTEL20 on $90 booking
-      final resHotel20 = await service.validateVoucher(
-        code: 'HOTEL20',
-        cartTotalUsd: 90.0,
-      );
-      expect(resHotel20.isValid, isTrue);
-      expect(resHotel20.discountUsd, 20.0);
-      expect(resHotel20.discountCents, 2000);
-
-      // SPA_RETREAT has min spend $100 -> fails on $40 booking
-      final resMinSpendFail = await service.validateVoucher(
-        code: 'SPA_RETREAT',
-        cartTotalUsd: 40.0,
-      );
-      expect(resMinSpendFail.isValid, isFalse);
-      expect(resMinSpendFail.errorMessage, contains('tối thiểu'));
+    test('validateVoucher rejects made-up and hard-coded codes', () async {
+      // The fake client throws on every query, so nothing can be looked up.
+      for (final code in ['ABC999999', 'SHOP10', 'HOTEL10', 'TRIPC10', 'X5']) {
+        final res = await service.validateVoucher(
+          code: code,
+          subtotalCents: 9000,
+          currency: 'USD',
+        );
+        expect(res.isValid, isFalse, reason: code);
+        expect(res.discountCents, 0, reason: code);
+      }
     });
+
+    test(
+      'validateVoucher accepts a voucher redeemed into the wallet',
+      () async {
+        final userId = 'wallet_user_${DateTime.now().microsecondsSinceEpoch}';
+        final hotel20 = VoucherService.defaultVouchers.firstWhere(
+          (v) => v.code == 'HOTEL20',
+        );
+        await service.redeemVoucher(userId: userId, voucher: hotel20);
+
+        final res = await service.validateVoucher(
+          code: 'hotel20',
+          subtotalCents: 9000,
+          currency: 'USD',
+          userId: userId,
+        );
+        expect(res.isValid, isTrue);
+        expect(res.discountCents, 2000);
+      },
+    );
+  });
+
+  group('evaluateVoucher', () {
+    const hotel20 = VoucherModel(
+      id: 'v1',
+      code: 'HOTEL20',
+      voucherType: 'Hotel Credit',
+      discountValue: 20,
+      minSpend: 50,
+      tcentPrice: 2000,
+    );
+
+    test('USD booking: fixed \$20 off', () {
+      final res = evaluateVoucher(
+        hotel20,
+        subtotalCents: 9000,
+        currency: 'USD',
+      );
+      expect(res.isValid, isTrue);
+      expect(res.discountCents, 2000);
+      expect(res.discountUsd, 20);
+    });
+
+    test('VND booking: \$20 is converted at the web rate', () {
+      // 3,000,000 VND room total (~\$117.88).
+      final res = evaluateVoucher(
+        hotel20,
+        subtotalCents: 300000000,
+        currency: 'VND',
+      );
+      expect(res.isValid, isTrue);
+      expect(
+        res.discountCents,
+        (20 * usdToVndRate * 100).round(),
+      ); // 509,000 VND
+    });
+
+    test('VND min spend is compared in USD', () {
+      // 1,000,000 VND (~\$39.29) is below the \$50 minimum.
+      final res = evaluateVoucher(
+        hotel20,
+        subtotalCents: 100000000,
+        currency: 'VND',
+      );
+      expect(res.isValid, isFalse);
+      expect(res.errorMessage, contains('tối thiểu'));
+    });
+
+    test('discount is capped at the room total', () {
+      const big = VoucherModel(
+        id: 'v2',
+        code: 'BIG',
+        voucherType: 'ALL',
+        discountValue: 500,
+        tcentPrice: 0,
+      );
+      final res = evaluateVoucher(big, subtotalCents: 9000, currency: 'USD');
+      expect(res.discountCents, 9000);
+      expect(res.discountUsd, 90);
+    });
+
+    test(
+      'rejects expired, inactive, used-up, non-hotel and unknown currency',
+      () {
+        final now = DateTime(2026, 11, 10);
+        VoucherModel make({
+          bool active = true,
+          DateTime? expires,
+          int? limit,
+          int used = 0,
+          String type = 'Hotel Credit',
+        }) => VoucherModel(
+          id: 'v',
+          code: 'V',
+          voucherType: type,
+          discountValue: 10,
+          tcentPrice: 0,
+          isActive: active,
+          expiresAt: expires,
+          totalUsageLimit: limit,
+          currentUsageCount: used,
+        );
+        bool ok(VoucherModel v, [String currency = 'USD']) => evaluateVoucher(
+          v,
+          subtotalCents: 9000,
+          currency: currency,
+          now: now,
+        ).isValid;
+
+        expect(ok(make()), isTrue);
+        expect(ok(make(active: false)), isFalse);
+        expect(ok(make(expires: DateTime(2026, 1, 1))), isFalse);
+        expect(ok(make(limit: 5, used: 5)), isFalse);
+        expect(ok(make(type: 'Wellness')), isFalse);
+        expect(ok(make(), 'EUR'), isFalse);
+      },
+    );
   });
 
   group('RewardsVouchersScreen Widget', () {
-    testWidgets('renders Tcent balance, Lucky Day banner, and Quests', (tester) async {
+    testWidgets('renders Tcent balance, Lucky Day banner, and Quests', (
+      tester,
+    ) async {
       final hotelService = HotelService(_FakeClient());
       final hotelState = HotelState(service: hotelService);
 
@@ -183,9 +288,7 @@ void main() {
           providers: [
             ChangeNotifierProvider<HotelState>.value(value: hotelState),
           ],
-          child: const MaterialApp(
-            home: RewardsVouchersScreen(),
-          ),
+          child: const MaterialApp(home: RewardsVouchersScreen()),
         ),
       );
 
@@ -201,59 +304,4 @@ void main() {
       expect(find.text('Spin'), findsOneWidget);
     });
   });
-
-  group('BookingScreen Voucher Application Widget', () {
-    testWidgets('applying SHOP10 voucher updates price breakdown and grand total', (tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final hotelService = HotelService(_FakeClient());
-      final hotelState = HotelState(service: hotelService);
-
-      await tester.pumpWidget(
-        MultiProvider(
-          providers: [
-            ChangeNotifierProvider<HotelState>.value(value: hotelState),
-          ],
-          child: const MaterialApp(
-            home: BookingScreen(
-              hotel: {
-                'name': 'Test Hotel',
-                'images': ['https://example.com/hotel.jpg'],
-              },
-              room: {
-                'title': 'Standard Room',
-                '_priceCents': 9000, // $90.0
-                '_currency': 'USD',
-              },
-            ),
-          ),
-        ),
-      );
-
-      await tester.pumpAndSettle();
-
-      // Before voucher: $90 room, 10% tax = $9, 5% fee = $4.5 -> Total $103.5 USD
-      expect(find.text('103.5 USD'), findsOneWidget);
-
-      // Enter SHOP10
-      final voucherInput = find.widgetWithText(TextFormField, 'Mã giảm giá (Voucher)');
-      expect(voucherInput, findsOneWidget);
-      await tester.enterText(voucherInput, 'SHOP10');
-      await tester.pump(const Duration(milliseconds: 350));
-      await tester.pumpAndSettle();
-
-      // After voucher: $90 - $10 = $80 discounted subtotal
-      // Tax 10% = $8, Fee 5% = $4 -> Total $92.0 USD
-      expect(find.text('Voucher discount (SHOP10)'), findsOneWidget);
-      expect(find.text('-10.0 USD'), findsOneWidget);
-      expect(find.text('92.0 USD'), findsOneWidget);
-      expect(find.text('Đã áp dụng mã SHOP10: Giảm \$10.0'), findsOneWidget);
-    });
-  });
 }
-

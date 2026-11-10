@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/booking_request.dart';
 import '../models/hotel_insight.dart';
+import '../models/online_payment.dart';
 import '../models/hotel_review.dart';
 import '../models/room_quote.dart';
 
@@ -246,10 +248,11 @@ class HotelService {
       final guestName = (name != null && name.trim().isNotEmpty)
           ? name.trim()
           : (user.userMetadata?['name'] as String?) ??
-              (user.userMetadata?['full_name'] as String?) ??
-              email.split('@').first;
-      final guestPhone =
-          (phone != null && phone.trim().isNotEmpty) ? phone.trim() : null;
+                (user.userMetadata?['full_name'] as String?) ??
+                email.split('@').first;
+      final guestPhone = (phone != null && phone.trim().isNotEmpty)
+          ? phone.trim()
+          : null;
 
       final row = await client
           .from('users')
@@ -271,6 +274,76 @@ class HotelService {
     }
   }
 
+  /// True when the Next.js backend URL is configured, which payments need.
+  bool get paymentsAvailable => apiBaseUrl.isNotEmpty;
+
+  /// Creates (or reuses) the pending booking on the server and returns the
+  /// MoMo/PayPal checkout URL. The server binds the booking to the verified
+  /// Supabase session and decides the charged amount.
+  Future<OnlinePayment> createOnlinePayment(
+    Map<String, dynamic> payload,
+    PaymentProvider provider,
+  ) async {
+    final response = await _paymentRequest(
+      (headers) => http.post(
+        Uri.parse('$apiBaseUrl/api/mobile/hotel-payments'),
+        headers: headers,
+        body: jsonEncode({'provider': provider.key, 'booking': payload}),
+      ),
+      userId: payload['user_uuid'],
+    );
+    return OnlinePayment.fromJson(response, requireUrl: true);
+  }
+
+  /// Asks the server for the booking's payment state (PayPal approvals are
+  /// captured there).
+  Future<OnlinePayment> paymentStatus(String bookingId) async {
+    final response = await _paymentRequest(
+      (headers) => http.get(
+        Uri.parse(
+          '$apiBaseUrl/api/mobile/hotel-payments/status',
+        ).replace(queryParameters: {'bookingId': bookingId}),
+        headers: headers,
+      ),
+    );
+    return OnlinePayment.fromJson(response);
+  }
+
+  Future<Map<String, dynamic>> _paymentRequest(
+    Future<http.Response> Function(Map<String, String> headers) send, {
+    Object? userId,
+  }) async {
+    if (!paymentsAvailable) {
+      throw const BookingCreationException(
+        'Thiếu APP_API_BASE_URL nên chưa thể thanh toán online.',
+      );
+    }
+    final session = auth.currentSession;
+    if (session == null || (userId != null && userId != session.user.id)) {
+      throw const AuthException('Vui lòng đăng nhập để thanh toán');
+    }
+    final response = await send({
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${session.accessToken}',
+    }).timeout(const Duration(seconds: 30));
+    Map<String, dynamic>? json;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) json = decoded;
+    } catch (_) {}
+    if (response.statusCode >= 400 || json?['ok'] != true) {
+      throw describePaymentHttpError(
+        response.statusCode,
+        json?['error'] is String ? json!['error'] as String : null,
+      );
+    }
+    final data = json!['data'];
+    if (data is! Map<String, dynamic>) {
+      throw const BookingCreationException('Phản hồi thanh toán không hợp lệ.');
+    }
+    return data;
+  }
+
   /// Inserts a pending booking request under the current user's session and
   /// returns the stored row. Success requires a real backend id.
   Future<Map<String, dynamic>> createBooking(
@@ -289,7 +362,10 @@ class HotelService {
     try {
       final guestName = (cleanPayload['guest_name'] as String?)?.trim();
       final guestPhone = (cleanPayload['guest_phone'] as String?)?.trim();
-      final profile = await ensureUserProfile(name: guestName, phone: guestPhone);
+      final profile = await ensureUserProfile(
+        name: guestName,
+        phone: guestPhone,
+      );
       if (profile != null) {
         validUserUuid = user.id;
       } else {
@@ -327,7 +403,8 @@ class HotelService {
     cleanPayload['partner_id'] = validPartnerId;
 
     // 3. Ensure discount_cents, working_pass_discount_cents and enforce valid_pricing constraint
-    final discountCents = cleanPayload['discount_cents'] as int? ??
+    final discountCents =
+        cleanPayload['discount_cents'] as int? ??
         (cleanPayload['metadata'] is Map
             ? (cleanPayload['metadata']['discount_cents'] as num?)?.toInt() ?? 0
             : 0);
@@ -338,16 +415,22 @@ class HotelService {
     // Enforce database constraint:
     // valid_pricing CHECK (total_cents = nightly_rate_cents * nights_count + tax_cents + fees_cents - discount_cents - working_pass_discount_cents)
     final nightlyRate = cleanPayload['nightly_rate_cents'] as int? ?? 0;
-    final inDate = DateTime.tryParse(cleanPayload['check_in_date']?.toString() ?? '');
-    final outDate = DateTime.tryParse(cleanPayload['check_out_date']?.toString() ?? '');
+    final inDate = DateTime.tryParse(
+      cleanPayload['check_in_date']?.toString() ?? '',
+    );
+    final outDate = DateTime.tryParse(
+      cleanPayload['check_out_date']?.toString() ?? '',
+    );
     final nightsCount = (inDate != null && outDate != null)
         ? max(1, outDate.difference(inDate).inDays)
         : 1;
     final taxCents = cleanPayload['tax_cents'] as int? ?? 0;
     final feesCents = cleanPayload['fees_cents'] as int? ?? 0;
-    final workingPassDiscount = cleanPayload['working_pass_discount_cents'] as int? ?? 0;
+    final workingPassDiscount =
+        cleanPayload['working_pass_discount_cents'] as int? ?? 0;
 
-    cleanPayload['total_cents'] = (nightlyRate * nightsCount) +
+    cleanPayload['total_cents'] =
+        (nightlyRate * nightsCount) +
         taxCents +
         feesCents -
         discountCents -
@@ -414,7 +497,12 @@ class HotelService {
       try {
         return await client
             .from('users')
-            .insert({'id': user.id, 'clerk_id': user.id, 'email': user.email, ...safeValues})
+            .insert({
+              'id': user.id,
+              'clerk_id': user.id,
+              'email': user.email,
+              ...safeValues,
+            })
             .select()
             .single();
       } catch (e) {

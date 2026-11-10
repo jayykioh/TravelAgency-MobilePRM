@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/voucher.dart';
+import '../utils/currency.dart';
 
 /// Service handling Tcent loyalty balance, daily spin wheel, and voucher marketplace/wallet.
 class VoucherService {
@@ -218,12 +219,16 @@ class VoucherService {
     final currentStatus = await getTcentStatus(userId);
 
     if (currentStatus.tcentBalance < voucher.tcentPrice) {
-      throw StateError('Số dư Tcent không đủ (Cần ${voucher.tcentPrice} TC, hiện có ${currentStatus.tcentBalance} TC).');
+      throw StateError(
+        'Số dư Tcent không đủ (Cần ${voucher.tcentPrice} TC, hiện có ${currentStatus.tcentBalance} TC).',
+      );
     }
 
     // Check if already in wallet
     final wallet = await fetchUserVouchers(userId);
-    if (wallet.any((v) => v.voucherId == voucher.id || v.voucher?.code == voucher.code)) {
+    if (wallet.any(
+      (v) => v.voucherId == voucher.id || v.voucher?.code == voucher.code,
+    )) {
       throw StateError('Bạn đã sở hữu voucher này trong ví rồi.');
     }
 
@@ -239,7 +244,9 @@ class VoucherService {
       voucher: voucher,
     );
 
-    _localUserVouchers.putIfAbsent(effectiveUserId, () => []).insert(0, userVoucher);
+    _localUserVouchers
+        .putIfAbsent(effectiveUserId, () => [])
+        .insert(0, userVoucher);
 
     // Try persisting to Supabase if authenticated
     if (userId != null && userId.isNotEmpty) {
@@ -284,7 +291,9 @@ class VoucherService {
     final todayStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
 
     if (_localSpunToday.contains('$effectiveUserId:$todayStr')) {
-      throw StateError('Bạn đã quay thưởng hôm nay rồi. Hãy quay lại vào ngày mai nhé!');
+      throw StateError(
+        'Bạn đã quay thưởng hôm nay rồi. Hãy quay lại vào ngày mai nhé!',
+      );
     }
 
     // Weighted Probability Wheel matching Web:
@@ -392,131 +401,159 @@ class VoucherService {
     );
   }
 
-  /// Validates a voucher code against cart subtotal and calculates discount.
+  /// Codes any signed-in user may apply without owning them, mirroring the
+  /// public list in the web route `app/api/v1/vouchers/validate`.
+  static const publicHotelCodes = {'HOTEL20'};
+
+  /// Validates [code] for a hotel booking whose room total is
+  /// [subtotalCents] (minor units of [currency]).
+  ///
+  /// Mirrors the web validation: a voucher is accepted only if it is in the
+  /// user's wallet, or it is a real `vouchers` row that is public and that
+  /// the user has not already used. Any lookup failure rejects the code;
+  /// there is no offline or pattern-based fallback.
   Future<VoucherValidationResult> validateVoucher({
     required String code,
-    required double cartTotalUsd,
-    String? serviceType,
+    required int subtotalCents,
+    required String currency,
     String? userId,
   }) async {
     final cleanCode = code.trim().toUpperCase();
-    if (cleanCode.isEmpty) {
-      return VoucherValidationResult.none;
+    if (cleanCode.isEmpty) return VoucherValidationResult.none;
+
+    VoucherValidationResult reject(String message) => VoucherValidationResult(
+      isValid: false,
+      code: cleanCode,
+      currency: currency,
+      errorMessage: message,
+    );
+
+    // 1. Owned and still available in the user's wallet.
+    if (userId != null && userId.isNotEmpty) {
+      final wallet = await fetchUserVouchers(userId);
+      for (final owned in wallet) {
+        final v = owned.voucher;
+        if (owned.isAvailable &&
+            v != null &&
+            v.code.toUpperCase() == cleanCode) {
+          return evaluateVoucher(
+            v,
+            subtotalCents: subtotalCents,
+            currency: currency,
+          );
+        }
+      }
     }
 
+    // 2. A real public voucher the user has not used yet.
     VoucherModel? voucher;
-
-    // 1. Try fetching from Supabase
     try {
       final row = await client
           .from('vouchers')
           .select()
           .ilike('code', cleanCode)
           .maybeSingle();
-
       if (row != null) {
         voucher = VoucherModel.fromJson(Map<String, dynamic>.from(row));
       }
     } catch (_) {
-      // Continue to local lookup
+      return reject('Không kiểm tra được mã "$cleanCode". Vui lòng thử lại.');
     }
-
-    // 2. Check local catalog / seed vouchers
     if (voucher == null) {
-      try {
-        voucher = defaultVouchers.firstWhere(
-          (v) => v.code.toUpperCase() == cleanCode,
-        );
-      } catch (_) {
-        // Continue to public codes
+      return reject('Mã voucher "$cleanCode" không hợp lệ hoặc không tồn tại.');
+    }
+    if (!publicHotelCodes.contains(voucher.code.toUpperCase())) {
+      return reject('Bạn chưa sở hữu voucher "$cleanCode".');
+    }
+    if (userId == null || userId.isEmpty) {
+      return reject('Đăng nhập để áp dụng voucher "$cleanCode".');
+    }
+    try {
+      final used = await client
+          .from('user_vouchers')
+          .select('status')
+          .eq('user_id', userId)
+          .eq('voucher_id', voucher.id)
+          .maybeSingle();
+      final status = '${used?['status'] ?? ''}'.toUpperCase();
+      if (status == 'USED') {
+        return reject('Bạn đã dùng voucher "$cleanCode" rồi.');
       }
-    }
-
-    // 3. Known public codes (e.g. SHOP10, SHOP20, HOTEL10, TRIPC10)
-    if (voucher == null) {
-      if (cleanCode == 'SHOP10' || cleanCode == 'HOTEL10' || cleanCode == 'TRIPC10') {
-        voucher = VoucherModel(
-          id: 'v_public_10',
-          code: cleanCode,
-          voucherType: 'Hotel Credit',
-          discountValue: 10.0,
-          minSpend: 0.0,
-          tcentPrice: 1000,
-          description: 'Giảm \$10 cho đơn đặt phòng',
-        );
-      } else if (cleanCode == 'SHOP20' || cleanCode == 'HOTEL20' || cleanCode == 'TRIPC20') {
-        voucher = VoucherModel(
-          id: 'v_public_20',
-          code: cleanCode,
-          voucherType: 'Hotel Credit',
-          discountValue: 20.0,
-          minSpend: 50.0,
-          tcentPrice: 2000,
-          description: 'Giảm \$20 cho đơn từ \$50',
-        );
-      } else if (RegExp(r'\d+$').hasMatch(cleanCode)) {
-        final match = RegExp(r'(\d+)$').firstMatch(cleanCode);
-        final val = double.tryParse(match?.group(1) ?? '0') ?? 0;
-        if (val > 0) {
-          voucher = VoucherModel(
-            id: 'v_custom_${cleanCode.toLowerCase()}',
-            code: cleanCode,
-            voucherType: 'Promo',
-            discountValue: val,
-            minSpend: 0.0,
-            tcentPrice: (val * 100).toInt(),
-            description: 'Giảm \$$val cho đơn đặt phòng',
-          );
-        }
+      if (status == 'EXPIRED') {
+        return reject('Voucher "$cleanCode" đã hết hạn sử dụng.');
       }
+    } catch (_) {
+      return reject('Không kiểm tra được mã "$cleanCode". Vui lòng thử lại.');
     }
-
-    if (voucher == null) {
-      return VoucherValidationResult(
-        isValid: false,
-        code: cleanCode,
-        errorMessage: 'Mã voucher "$cleanCode" không hợp lệ hoặc không tồn tại.',
-      );
-    }
-
-    // 4. Validate Min Spend
-    if (voucher.minSpend > 0 && cartTotalUsd < voucher.minSpend) {
-      return VoucherValidationResult(
-        isValid: false,
-        code: cleanCode,
-        voucher: voucher,
-        errorMessage:
-            'Đơn hàng tối thiểu phải từ \$${voucher.minSpend.toStringAsFixed(0)} (Hiện tại: \$${cartTotalUsd.toStringAsFixed(1)})',
-      );
-    }
-
-    // 5. Validate Expiry
-    if (voucher.expiresAt != null && voucher.expiresAt!.isBefore(DateTime.now())) {
-      return VoucherValidationResult(
-        isValid: false,
-        code: cleanCode,
-        voucher: voucher,
-        errorMessage: 'Voucher "$cleanCode" đã hết hạn sử dụng.',
-      );
-    }
-
-    // 6. Calculate Discount Amount
-    double discount = voucher.discountValue;
-    if (discount <= 1.0 && discount > 0) {
-      discount = cartTotalUsd * discount;
-    }
-
-    if (discount > cartTotalUsd) {
-      discount = cartTotalUsd;
-    }
-
-    return VoucherValidationResult(
-      isValid: true,
-      code: cleanCode,
-      discountUsd: discount,
-      message: 'Áp dụng thành công mã $cleanCode: Giảm \$${discount.toStringAsFixed(1)}',
-      voucher: voucher,
+    return evaluateVoucher(
+      voucher,
+      subtotalCents: subtotalCents,
+      currency: currency,
     );
   }
 }
 
+/// Checks [voucher]'s own rules against a hotel room total and computes the
+/// discount in the booking's [currency]. Vouchers hold a fixed USD amount
+/// (`discount_value`, as on web) and a USD `min_spend`.
+VoucherValidationResult evaluateVoucher(
+  VoucherModel voucher, {
+  required int subtotalCents,
+  required String currency,
+  DateTime? now,
+}) {
+  final code = voucher.code.toUpperCase();
+  final at = now ?? DateTime.now();
+  VoucherValidationResult reject(String message) => VoucherValidationResult(
+    isValid: false,
+    code: code,
+    currency: currency,
+    voucher: voucher,
+    errorMessage: message,
+  );
+
+  if (!voucher.isActive) {
+    return reject('Voucher "$code" hiện không hoạt động.');
+  }
+  if (voucher.startsAt != null && voucher.startsAt!.isAfter(at)) {
+    return reject('Voucher "$code" chưa đến thời gian sử dụng.');
+  }
+  if (voucher.expiresAt != null && voucher.expiresAt!.isBefore(at)) {
+    return reject('Voucher "$code" đã hết hạn sử dụng.');
+  }
+  final limit = voucher.totalUsageLimit;
+  if (limit != null && voucher.currentUsageCount >= limit) {
+    return reject('Voucher "$code" đã hết lượt sử dụng.');
+  }
+  final type = voucher.voucherType.toLowerCase().trim();
+  if (!(type.contains('hotel') || type == 'global' || type == 'all')) {
+    return reject('Voucher "$code" không áp dụng cho đặt phòng khách sạn.');
+  }
+
+  final subtotalUsd = minorUnitsToUsd(subtotalCents, currency);
+  final faceCents = usdToMinorUnits(voucher.discountValue, currency);
+  if (subtotalUsd == null || faceCents == null) {
+    return reject('Voucher chưa hỗ trợ đơn bằng $currency.');
+  }
+  if (voucher.discountValue <= 0) {
+    return reject('Voucher "$code" không có giá trị giảm.');
+  }
+  if (voucher.minSpend > 0 && subtotalUsd < voucher.minSpend) {
+    return reject(
+      'Đơn tối thiểu \$${voucher.minSpend.toStringAsFixed(0)} '
+      '(hiện tại \$${subtotalUsd.toStringAsFixed(2)}).',
+    );
+  }
+
+  final discountCents = min(faceCents, subtotalCents);
+  final discountUsd = min(voucher.discountValue, subtotalUsd);
+  return VoucherValidationResult(
+    isValid: true,
+    code: code,
+    discountUsd: discountUsd,
+    discountCents: discountCents,
+    currency: currency,
+    voucher: voucher,
+    message: 'Áp dụng thành công mã $code',
+  );
+}

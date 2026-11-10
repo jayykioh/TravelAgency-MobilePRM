@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/booking_request.dart';
+import '../models/online_payment.dart';
 import '../models/room_quote.dart';
 import '../providers/hotel_state.dart';
+import '../utils/currency.dart';
 import '../utils/hotel_format.dart';
 import '../widgets/payment_bottom_sheet.dart';
 import 'hotel_bookings_screen.dart';
 import 'hotel_checkout_screen.dart';
+import 'online_payment_screen.dart';
 
 const _brand = Color(0xFFFF5E1F);
 const _muted = Color(0xFF64748B);
@@ -29,13 +32,15 @@ class BookingReviewScreen extends StatefulWidget {
 
 class _BookingReviewScreenState extends State<BookingReviewScreen> {
   bool busy = false;
+  PaymentProvider? payingWith;
   BookingCreationException? error;
 
-  Future<void> _submit(RoomQuote quote) async {
+  Future<void> _submit(RoomQuote quote, {PaymentProvider? payWith}) async {
     if (busy) return;
     final state = context.read<HotelState>();
     setState(() {
       busy = true;
+      payingWith = payWith;
       error = null;
     });
     try {
@@ -66,6 +71,27 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         children: state.children,
         confirmationCode: code,
       );
+      if (payWith != null) {
+        // Server creates the booking with the service role (no RLS block)
+        // and returns the MoMo/PayPal checkout URL.
+        final payment = await state.createOnlinePayment(payload, payWith);
+        if (!mounted) return;
+        state.completeBooking();
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => OnlinePaymentScreen(
+              payment: payment,
+              hotelName: '${widget.hotel['name'] ?? ''}',
+              roomTitle: quote.roomTitle,
+              quote: quote,
+              openCheckoutOnStart: true,
+            ),
+          ),
+          (route) => route.isFirst,
+        );
+        return;
+      }
       final booking = await state.createBooking(payload);
       if (!mounted) return;
       state.completeBooking();
@@ -99,8 +125,8 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
         body: const Center(child: Text('Chưa chọn phòng.')),
       );
     }
-    final price = quote.breakdown;
     final guest = widget.guest;
+    final price = quote.breakdownWithDiscount(guest.discountCents);
     return PopScope(
       canPop: !busy,
       child: Scaffold(
@@ -110,7 +136,7 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
           children: [
             BookingSummaryCard(hotel: widget.hotel, quote: quote, state: state),
             const SizedBox(height: 16),
-            _Card(
+            ReviewCard(
               title: 'Khách lưu trú',
               trailing: TextButton(
                 onPressed: busy ? null : () => Navigator.pop(context),
@@ -132,22 +158,26 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                 ],
                 if (guest.voucherCode.isNotEmpty)
                   Text(
-                    guest.discountCents > 0
-                        ? 'Mã ưu đãi: ${guest.voucherCode.toUpperCase()} (Đã giảm ${formatMoney(guest.discountCents, quote.currency)})'
+                    price.discountCents > 0
+                        ? 'Mã ưu đãi: ${guest.voucherCode.toUpperCase()} (Đã giảm ${formatMoney(price.discountCents, quote.currency)})'
                         : 'Mã ưu đãi: ${guest.voucherCode.toUpperCase()} (chưa áp dụng vào tổng)',
                     style: TextStyle(
-                      color: guest.discountCents > 0 ? const Color(0xFF16A34A) : _muted,
-                      fontWeight: guest.discountCents > 0 ? FontWeight.w600 : null,
+                      color: price.discountCents > 0
+                          ? const Color(0xFF16A34A)
+                          : _muted,
+                      fontWeight: price.discountCents > 0
+                          ? FontWeight.w600
+                          : null,
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 16),
-            _Card(
+            ReviewCard(
               title: 'Chi tiết giá',
               children: [
                 for (final night in quote.nights)
-                  _PriceLine(
+                  PriceLine(
                     label:
                         'Đêm ${formatDay(DateTime.parse(night.date))}'
                         '${quote.roomCount > 1 ? ' × ${quote.roomCount} phòng' : ''}',
@@ -158,61 +188,46 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                     muted: true,
                   ),
                 const Divider(),
-                _PriceLine(
+                PriceLine(
                   label: 'Tiền phòng',
                   value: formatMoney(price.subtotalCents, quote.currency),
                 ),
-                if (guest.discountCents > 0)
-                  _PriceLine(
-                    label: 'Giảm giá voucher (${guest.voucherCode.toUpperCase()})',
-                    value: '-${formatMoney(guest.discountCents, quote.currency)}',
+                if (price.discountCents > 0)
+                  PriceLine(
+                    label:
+                        'Giảm giá voucher (${guest.voucherCode.toUpperCase()})',
+                    value:
+                        '-${formatMoney(price.discountCents, quote.currency)}',
                     color: const Color(0xFF16A34A),
                     strong: true,
                   ),
-                _PriceLine(
+                PriceLine(
                   label: 'Thuế (10%)',
-                  value: formatMoney(
-                    guest.discountCents > 0
-                        ? (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.10).round()
-                        : price.taxCents,
-                    quote.currency,
-                  ),
+                  value: formatMoney(price.taxCents, quote.currency),
                 ),
-                _PriceLine(
+                PriceLine(
                   label: 'Phí dịch vụ (5%)',
-                  value: formatMoney(
-                    guest.discountCents > 0
-                        ? (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.05).round()
-                        : price.feeCents,
-                    quote.currency,
-                  ),
+                  value: formatMoney(price.feeCents, quote.currency),
                 ),
                 const Divider(),
-                _PriceLine(
+                PriceLine(
                   label: 'Tổng cộng',
-                  value: formatMoney(
-                    guest.discountCents > 0
-                        ? ((price.subtotalCents - guest.discountCents).clamp(0, 999999999) +
-                            (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.10).round() +
-                            (((price.subtotalCents - guest.discountCents).clamp(0, 999999999)) * 0.05).round())
-                        : price.totalCents,
-                    quote.currency,
-                  ),
+                  value: formatMoney(price.totalCents, quote.currency),
                   strong: true,
                 ),
               ],
             ),
             const SizedBox(height: 16),
             if (quote.source.isReference)
-              const _Banner(
+              const InfoBanner(
                 icon: Icons.info_outline,
                 text:
                     'Giá tham khảo: chưa có giá cho đúng ngày bạn chọn. Khách sạn sẽ xác nhận giá và phòng trống trước khi đơn được xác nhận.',
               ),
-            const _Banner(
+            const InfoBanner(
               icon: Icons.hourglass_top,
               text:
-                  'Chờ xác nhận · Chưa thanh toán. Đây là yêu cầu đặt phòng, không phải xác nhận phòng; app không thu tiền.',
+                  'Chờ xác nhận · Chưa thanh toán. Gửi yêu cầu không trừ tiền; sau khi đơn được tạo, bạn có thể thanh toán ngay qua MoMo/PayPal hoặc thanh toán sau trong “Đơn của tôi”.',
             ),
             if (error != null) ...[
               const SizedBox(height: 8),
@@ -246,36 +261,113 @@ class _BookingReviewScreenState extends State<BookingReviewScreen> {
                 ),
               ),
             ],
+            if (state.paymentsAvailable)
+              InfoBanner(
+                icon: Icons.payments_outlined,
+                text: paymentTestAmountVnd > 0
+                    ? 'Chế độ test: MoMo/PayPal chỉ thu ${formatMoney(paymentTestAmountVnd * 100, 'VND')} cho đơn này (PayPal quy đổi sang USD), không phải tổng ở trên.'
+                    : 'Thanh toán ngay qua MoMo hoặc PayPal. Số tiền thu do máy chủ xác định.',
+              ),
             const SizedBox(height: 16),
+            if (state.paymentsAvailable)
+              for (final provider in PaymentProvider.values) ...[
+                _PayButton(
+                  provider: provider,
+                  busy: busy,
+                  loading: busy && payingWith == provider,
+                  onPressed: () => _submit(quote, payWith: provider),
+                ),
+                const SizedBox(height: 10),
+              ],
             SizedBox(
               height: 54,
-              child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: _brand),
-                onPressed: busy ? null : () => _submit(quote),
-                child: busy
-                    ? const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          ),
-                          SizedBox(width: 10),
-                          Text('Đang gửi yêu cầu…'),
-                        ],
-                      )
-                    : Text(
-                        state.isAuthenticated
-                            ? 'Gửi yêu cầu đặt phòng'
-                            : 'Đăng nhập & gửi yêu cầu',
+              child: state.paymentsAvailable
+                  ? OutlinedButton(
+                      style: OutlinedButton.styleFrom(foregroundColor: _brand),
+                      onPressed: busy ? null : () => _submit(quote),
+                      child: Text(
+                        busy && payingWith == null
+                            ? 'Đang gửi yêu cầu…'
+                            : 'Chỉ gửi yêu cầu (thanh toán sau)',
                       ),
-              ),
+                    )
+                  : FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: _brand),
+                      onPressed: busy ? null : () => _submit(quote),
+                      child: busy
+                          ? const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                SizedBox(width: 10),
+                                Text('Đang gửi yêu cầu…'),
+                              ],
+                            )
+                          : Text(
+                              state.isAuthenticated
+                                  ? 'Gửi yêu cầu đặt phòng'
+                                  : 'Đăng nhập & gửi yêu cầu',
+                            ),
+                    ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PayButton extends StatelessWidget {
+  const _PayButton({
+    required this.provider,
+    required this.busy,
+    required this.loading,
+    required this.onPressed,
+  });
+  final PaymentProvider provider;
+  final bool busy;
+  final bool loading;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = provider == PaymentProvider.momo
+        ? const Color(0xFFA50064)
+        : const Color(0xFF003087);
+    final amount = paymentTestAmountVnd > 0
+        ? ' · ${formatMoney(paymentTestAmountVnd * 100, 'VND')}'
+        : '';
+    return SizedBox(
+      height: 54,
+      child: FilledButton.icon(
+        key: ValueKey('pay-${provider.key}'),
+        style: FilledButton.styleFrom(backgroundColor: color),
+        onPressed: busy ? null : onPressed,
+        icon: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Icon(
+                provider == PaymentProvider.momo
+                    ? Icons.account_balance_wallet_outlined
+                    : Icons.credit_card,
+              ),
+        label: Text(
+          loading
+              ? 'Đang tạo thanh toán…'
+              : 'Thanh toán ${provider.label}$amount',
         ),
       ),
     );
@@ -312,7 +404,8 @@ class _BookingResultScreenState extends State<BookingResultScreen> {
   @override
   Widget build(BuildContext context) {
     final total =
-        (widget.booking['total_cents'] as num?)?.toInt() ?? widget.quote.breakdown.totalCents;
+        (widget.booking['total_cents'] as num?)?.toInt() ??
+        widget.quote.breakdown.totalCents;
     final currency = '${widget.booking['currency'] ?? widget.quote.currency}';
     return Scaffold(
       appBar: AppBar(
@@ -344,7 +437,7 @@ class _BookingResultScreenState extends State<BookingResultScreen> {
             style: const TextStyle(color: _muted),
           ),
           const SizedBox(height: 24),
-          _Card(
+          ReviewCard(
             title: widget.hotelName,
             children: [
               Text(widget.roomTitle),
@@ -352,29 +445,31 @@ class _BookingResultScreenState extends State<BookingResultScreen> {
                 '${formatDay(widget.quote.start)} → ${formatDay(widget.quote.end)} · ${widget.quote.nightCount} đêm',
               ),
               const Divider(),
-              _PriceLine(
+              PriceLine(
                 label: 'Mã xác nhận',
                 value: '${widget.booking['confirmation_code'] ?? '—'}',
                 strong: true,
               ),
-              _PriceLine(
+              PriceLine(
                 label: 'Mã đơn',
                 value: '${widget.booking['id']}',
                 muted: true,
               ),
-              _PriceLine(
+              PriceLine(
                 label: 'Trạng thái',
                 value: isPaid ? 'Đã xác nhận' : 'Chờ xác nhận',
                 color: isPaid ? const Color(0xFF16A34A) : null,
                 strong: isPaid,
               ),
-              _PriceLine(
+              PriceLine(
                 label: 'Thanh toán',
                 value: isPaid ? 'Đã thanh toán' : 'Chưa thanh toán',
-                color: isPaid ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                color: isPaid
+                    ? const Color(0xFF16A34A)
+                    : const Color(0xFFDC2626),
                 strong: true,
               ),
-              _PriceLine(
+              PriceLine(
                 label: 'Tổng cộng',
                 value: formatMoney(total, currency),
                 strong: true,
@@ -403,7 +498,7 @@ class _BookingResultScreenState extends State<BookingResultScreen> {
                     bookingId: '${widget.booking['id']}',
                     confirmationCode:
                         '${widget.booking['confirmation_code'] ?? 'HTL'}',
-                    totalAmountUsd: total / 100.0,
+                    totalAmountUsd: minorUnitsToUsd(total, currency) ?? 0,
                     hotelName: widget.hotelName,
                     roomTitle: widget.roomTitle,
                     currency: currency,
@@ -447,8 +542,13 @@ class _BookingResultScreenState extends State<BookingResultScreen> {
   }
 }
 
-class _Card extends StatelessWidget {
-  const _Card({required this.title, required this.children, this.trailing});
+class ReviewCard extends StatelessWidget {
+  const ReviewCard({
+    super.key,
+    required this.title,
+    required this.children,
+    this.trailing,
+  });
   final String title;
   final List<Widget> children;
   final Widget? trailing;
@@ -485,8 +585,9 @@ class _Card extends StatelessWidget {
   );
 }
 
-class _PriceLine extends StatelessWidget {
-  const _PriceLine({
+class PriceLine extends StatelessWidget {
+  const PriceLine({
+    super.key,
     required this.label,
     required this.value,
     this.strong = false,
@@ -531,8 +632,8 @@ class _PriceLine extends StatelessWidget {
   );
 }
 
-class _Banner extends StatelessWidget {
-  const _Banner({required this.icon, required this.text});
+class InfoBanner extends StatelessWidget {
+  const InfoBanner({super.key, required this.icon, required this.text});
   final IconData icon;
   final String text;
 
