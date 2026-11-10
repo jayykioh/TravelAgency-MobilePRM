@@ -519,6 +519,16 @@ class HotelService {
         .single();
   }
 
+  /// Initial inbox plus database changes. RLS must enforce ownership server-side.
+  Stream<List<Map<String, dynamic>>> watchNotifications(String userId) {
+    return client
+        .from('notifications')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(50);
+  }
+
   Future<List<Map<String, dynamic>>> notifications() async {
     final user = auth.currentUser;
     if (user == null) return [];
@@ -533,11 +543,17 @@ class HotelService {
   Future<void> markNotificationRead(String id) async {
     final user = auth.currentUser;
     if (user == null) throw const AuthException('Vui lòng đăng nhập');
-    await client
+    final updated = await client
         .from('notifications')
         .update({'is_read': true})
         .eq('id', id)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .select('id');
+    if (updated.isEmpty) {
+      throw StateError(
+        'Thông báo không còn tồn tại hoặc bạn không có quyền cập nhật.',
+      );
+    }
   }
 
   Future<void> markAllNotificationsRead() async {

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/hotel_state.dart';
+import '../providers/notifications_feed.dart';
 
 /// Port of NotificationDrawer: tabs, unread state and mark-as-read actions.
 class NotificationsScreen extends StatefulWidget {
@@ -10,52 +13,108 @@ class NotificationsScreen extends StatefulWidget {
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends State<NotificationsScreen>
+    with WidgetsBindingObserver {
   String filter = 'all';
-  Future<List<Map<String, dynamic>>>? request;
+  late final NotificationsFeed feed;
+  bool updating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    feed = NotificationsFeed(
+      (userId) => context.read<HotelState>().service.watchNotifications(userId),
+    )..addListener(_feedChanged);
+  }
+
+  void _feedChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    request ??= context.read<HotelState>().service.notifications();
+    final state = context.watch<HotelState>();
+    feed.bindUser(state.currentUser?.id);
   }
 
-  void reload() => setState(
-    () => request = context.read<HotelState>().service.notifications(),
-  );
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && feed.userId != null) {
+      unawaited(feed.refresh());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    feed.removeListener(_feedChanged);
+    feed.dispose();
+    super.dispose();
+  }
+
+  Future<void> markRead([String? id]) async {
+    final owner = feed.userId;
+    if (updating || owner == null) return;
+    setState(() => updating = true);
+    try {
+      final service = context.read<HotelState>().service;
+      if (id == null) {
+        await service.markAllNotificationsRead();
+      } else {
+        await service.markNotificationRead(id);
+      }
+      if (mounted && owner == feed.userId) await feed.refresh();
+    } catch (_) {
+      if (mounted && owner == feed.userId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chưa đánh dấu được đã đọc. Hãy thử lại.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => updating = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('Notifications'),
+      title: Text('Thông báo (${feed.unreadCount} chưa đọc)'),
       actions: [
         IconButton(
           tooltip: 'Đánh dấu tất cả đã đọc',
-          onPressed: () async {
-            try {
-              await context
-                  .read<HotelState>()
-                  .service
-                  .markAllNotificationsRead();
-              reload();
-            } catch (error) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(SnackBar(content: Text('$error')));
-              }
-            }
-          },
+          onPressed: updating || feed.unreadCount == 0
+              ? null
+              : () => markRead(),
           icon: const Icon(Icons.done_all),
         ),
       ],
     ),
-    body: FutureBuilder<List<Map<String, dynamic>>>(
-      future: request,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    body: Builder(
+      builder: (context) {
+        if (feed.userId == null) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Đăng nhập để xem thông báo của bạn.'),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () =>
+                      context.read<HotelState>().requireAuth(context),
+                  child: const Text('Đăng nhập'),
+                ),
+              ],
+            ),
+          );
+        }
+        if (feed.loading && feed.items.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
+        if (feed.error != null && feed.items.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -63,17 +122,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Không đọc được notifications qua session hiện tại.\n${snapshot.error}',
+                    'Chưa kết nối được thông báo. Kiểm tra mạng rồi thử lại.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 12),
-                  FilledButton(onPressed: reload, child: const Text('Thử lại')),
+                  FilledButton(
+                    onPressed: feed.refresh,
+                    child: const Text('Thử lại'),
+                  ),
                 ],
               ),
             ),
           );
         }
-        final all = snapshot.data ?? [];
+        final all = feed.items;
         final visible = all
             .where(
               (item) =>
@@ -85,6 +147,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             .toList();
         return Column(
           children: [
+            if (feed.error != null)
+              MaterialBanner(
+                content: const Text(
+                  'Kết nối bị gián đoạn. Danh sách có thể chưa cập nhật.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: feed.refresh,
+                    child: const Text('Kết nối lại'),
+                  ),
+                ],
+              ),
+            if (feed.loading) const LinearProgressIndicator(),
             SizedBox(
               height: 56,
               child: ListView(
@@ -104,7 +179,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
-                        label: Text(value.toUpperCase()),
+                        label: Text(
+                          const {
+                            'all': 'Tất cả',
+                            'unread': 'Chưa đọc',
+                            'reward': 'Phần thưởng',
+                            'booking': 'Đặt phòng',
+                            'system': 'Hệ thống',
+                          }[value]!,
+                        ),
                         selected: filter == value,
                         onSelected: (_) => setState(() => filter = value),
                       ),
@@ -113,19 +196,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ),
             Expanded(
-              child: visible.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.inbox_outlined, size: 56),
-                          Text('No notifications found'),
+              child: RefreshIndicator(
+                onRefresh: feed.refresh,
+                child: visible.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(height: 80),
+                          Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.inbox_outlined, size: 56),
+                                Text('Chưa có thông báo trong mục này'),
+                              ],
+                            ),
+                          ),
                         ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () async => reload(),
-                      child: ListView.builder(
+                      )
+                    : ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 110),
                         itemCount: visible.length,
                         itemBuilder: (context, index) {
@@ -167,18 +257,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                       color: Color(0xFFFF5E1F),
                                     )
                                   : null,
-                              onTap: () async {
-                                await context
-                                    .read<HotelState>()
-                                    .service
-                                    .markNotificationRead('${item['id']}');
-                                reload();
-                              },
+                              onTap: updating || !unread
+                                  ? null
+                                  : () => markRead('${item['id']}'),
                             ),
                           );
                         },
                       ),
-                    ),
+              ),
             ),
           ],
         );
